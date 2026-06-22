@@ -57,16 +57,16 @@ export function BrainDump({ onSubmit, onImageSubmit }: BrainDumpProps) {
     recognition.start();
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onImageSubmit) return;
 
-    if (!file.type.startsWith('image/')) {
-      addToast('Please upload a valid image file.', 'error');
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      addToast('Please upload a valid image or PDF file.', 'error');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      addToast('Image must be under 5MB.', 'error');
+    if (file.size > 20 * 1024 * 1024) {
+      addToast('File must be under 20MB.', 'error');
       return;
     }
 
@@ -123,17 +123,17 @@ export function BrainDump({ onSubmit, onImageSubmit }: BrainDumpProps) {
             <>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 ref={fileInputRef}
-                onChange={handleImageUpload}
+                onChange={handleFileUpload}
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isSubmitting}
                 className="p-2 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50"
-                title="Upload image"
+                title="Upload document or image"
               >
                 <ImagePlus className="w-5 h-5" />
               </button>

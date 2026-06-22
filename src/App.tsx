@@ -10,6 +10,9 @@ import { Target, CheckCircle2, BarChart3, AlertTriangle, LayoutGrid, List, Clock
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useToast } from './components/ToastContext';
 
+import { AgentChat } from './components/AgentChat';
+import { DailyBrief } from './components/DailyBrief';
+
 export default function App() {
   const { addToast } = useToast();
   const [tasks, setTasks] = useLocalStorage<Task[]>('tempo_tasks', []);
@@ -26,6 +29,7 @@ export default function App() {
   const [escalationReasons, setEscalationReasons] = useLocalStorage<Record<string, string>>('tempo_escalations', {});
   const [sprintCount] = useLocalStorage('tempo_sprints', 0);
   const [habits] = useLocalStorage<any[]>('tempo_habits', []);
+  const [agentLogs, setAgentLogs] = useLocalStorage<{timestamp: string, note: string}[]>('tempo_agent_logs', []);
   const activeHabitsCount = habits.filter(h => h.streak > 0).length;
 
   useEffect(() => {
@@ -48,30 +52,40 @@ export default function App() {
     
     const updatedTasks = tasks.map(t => {
       if (!t.dueDate) return t;
+      if (t.dismissed || (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > now.getTime())) {
+        if (newReasons[t.id]) {
+          delete newReasons[t.id];
+          changed = true;
+        }
+        return t;
+      }
+      
       const due = new Date(t.dueDate);
       const hoursLeft = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
       
       const isPastDue = hoursLeft < 0;
-      if (isPastDue && t.urgency < 10) {
+      const overdueMsg = `Overdue by ${Math.floor(Math.abs(hoursLeft))} hours. Urgency maximized.`;
+      
+      if (isPastDue && (t.urgency < 10 || newReasons[t.id] !== overdueMsg)) {
         changed = true;
-        const msg = `Overdue by ${Math.floor(Math.abs(hoursLeft))} hours. Urgency maximized.`;
-        if (newReasons[t.id] !== msg) {
+        if (newReasons[t.id] !== overdueMsg) {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Task Overdue', { body: `${t.title} is overdue!` });
           }
         }
-        newReasons[t.id] = msg;
+        newReasons[t.id] = overdueMsg;
         return { ...t, urgency: 10, priority: 'High' as const };
       }
-      if (hoursLeft >= 0 && hoursLeft <= 24 && t.urgency < 8) {
+      
+      const soonMsg = `Due within 24h. Urgency escalated.`;
+      if (hoursLeft >= 0 && hoursLeft <= 24 && (t.urgency < 8 || newReasons[t.id] !== soonMsg)) {
         changed = true;
-        const msg = `Due within 24h. Urgency escalated.`;
-        if (newReasons[t.id] !== msg) {
+        if (newReasons[t.id] !== soonMsg) {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('Task Due Soon', { body: `${t.title} is due within 24 hours.` });
           }
         }
-        newReasons[t.id] = msg;
+        newReasons[t.id] = soonMsg;
         return { ...t, urgency: Math.max(8, t.urgency + 3), priority: 'High' as const };
       }
       return t;
@@ -114,6 +128,83 @@ export default function App() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, lastTouched: new Date().toISOString() } : t));
   };
 
+  const addAgentLog = (note: string) => {
+    setAgentLogs(prev => {
+      const next = [{ timestamp: new Date().toISOString(), note }, ...prev];
+      return next.slice(0, 50); // Keep last 50 logs
+    });
+  };
+
+  const handleAgentActions = async (actions: any[]) => {
+    let tasksChanged = false;
+    let nextTasks = [...tasks];
+    
+    for (const action of actions) {
+      const { name, args } = action;
+      if (name === 'createTask') {
+         nextTasks.push({
+            id: crypto.randomUUID(),
+            title: args.title,
+            priority: args.priority || 'Medium',
+            urgency: 5,
+            dueDate: args.dueDate || undefined,
+            subtasks: [],
+            createdAt: new Date().toISOString(),
+            lastTouched: new Date().toISOString()
+         });
+         tasksChanged = true;
+         addAgentLog(`Created task: ${args.title}`);
+      } else if (name === 'rescheduleTask') {
+         nextTasks = nextTasks.map(t => t.id === args.taskId ? { ...t, dueDate: args.newDueDate, lastTouched: new Date().toISOString() } : t);
+         tasksChanged = true;
+         addAgentLog(`Rescheduled task ${args.taskId.slice(0,4)}... to ${args.newDueDate}`);
+      } else if (name === 'completeTask') {
+         const taskToComplete = nextTasks.find(t => t.id === args.taskId);
+         if (taskToComplete) {
+            setCompletedTasks(prev => {
+              const next = [...prev, { ...taskToComplete, completedAt: new Date().toISOString().split('T')[0] }];
+              if (next.length > 50) return next.slice(next.length - 50);
+              return next;
+            });
+            nextTasks = nextTasks.filter(t => t.id !== args.taskId);
+            tasksChanged = true;
+            addAgentLog(`Completed task: ${taskToComplete.title}`);
+         }
+      } else if (name === 'breakdownTask') {
+         const tIdx = nextTasks.findIndex(t => t.id === args.taskId);
+         if (tIdx !== -1) {
+             const t = nextTasks[tIdx];
+             try {
+                const res = await fetch('/api/gemini/breakdown', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ taskTitle: t.title, subtaskTitle: 'Main Task Breakdown' })
+                });
+                const data = await res.json();
+                if (res.ok && data.result) {
+                   nextTasks[tIdx] = { 
+                     ...t, 
+                     subtasks: [...(t.subtasks || []), ...data.result],
+                     lastTouched: new Date().toISOString()
+                   };
+                   tasksChanged = true;
+                   addAgentLog(`Generated subtasks for: ${t.title}`);
+                }
+             } catch(e) {
+                console.error('Agent breakdown error', e);
+             }
+         }
+      } else if (name === 'planDay') {
+         addAgentLog('Planned day automatically');
+      }
+    }
+    
+    if (tasksChanged) {
+       setTasks(nextTasks);
+       addToast('Agent actions applied', 'success');
+    }
+  };
+
   const handleBrainDumpSubmit = async (text: string) => {
     try {
       const response = await fetch('/api/gemini/parse', {
@@ -124,6 +215,10 @@ export default function App() {
       const data = await response.json();
       if (response.ok && data.result) {
         setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID(), createdAt: new Date().toISOString(), lastTouched: new Date().toISOString() }))]);
+        
+        if (data.citations && data.citations.length > 0) {
+          addToast(`Grounded sources: ${data.citations[0]}`, 'success');
+        }
       } else {
         throw new Error(data.error || 'Failed to parse tasks');
       }
@@ -151,7 +246,10 @@ export default function App() {
       const data = await response.json();
       if (response.ok && data.result) {
         setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID(), createdAt: new Date().toISOString(), lastTouched: new Date().toISOString() }))]);
-        addToast('Tasks extracted from image', 'success');
+        addToast('Tasks extracted successfully', 'success');
+        if (data.citations && data.citations.length > 0) {
+          addToast(`Grounded sources: ${data.citations[0]}`, 'success');
+        }
       } else {
         throw new Error(data.error || 'Failed to parse image');
       }
@@ -173,12 +271,15 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           task: task.title, 
-          action: `Draft a solution, outline, or quick start guide based on the subtasks: ${task.subtasks.map((s: string | Subtask) => typeof s === 'string' ? s : s.title).join(', ')}` 
+          action: `Draft a solution, outline, or quick start guide based on the subtasks: ${(task.subtasks || []).map((s: string | Subtask) => typeof s === 'string' ? s : s.title).join(', ')}` 
         }),
       });
       const data = await response.json();
       if (response.ok && data.result) {
         setActionModal((prev) => ({ ...prev, content: data.result, isLoading: false }));
+        if (data.citations && data.citations.length > 0) {
+           addToast(`Grounded sources: ${data.citations[0]}`, 'success');
+        }
       } else {
         throw new Error(data.error || 'Action failed to execute');
       }
@@ -207,9 +308,11 @@ export default function App() {
   const handleUpdateSubtask = (taskId: string, subtaskIdx: number, completed: boolean) => {
     setTasks(prev => prev.map(t => {
       if (t.id !== taskId) return t;
-      const newSubtasks = [...t.subtasks];
+      const newSubtasks = [...(t.subtasks || [])];
       const sub = newSubtasks[subtaskIdx];
-      newSubtasks[subtaskIdx] = typeof sub === 'string' ? { title: sub, completed } : { ...sub, completed };
+      if (sub) {
+        newSubtasks[subtaskIdx] = typeof sub === 'string' ? { title: sub, completed } : { ...sub, completed };
+      }
       return { ...t, subtasks: newSubtasks, lastTouched: new Date().toISOString() };
     }));
   };
@@ -309,9 +412,11 @@ export default function App() {
         </div>
       </header>
 
+      <DailyBrief tasks={tasks} />
       <main className="max-w-4xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
         <div className="space-y-12">
-          <section>
+          <section className="space-y-6">
+            <AgentChat tasks={tasks} onExecuteAgentActions={handleAgentActions} onPlanDay={() => { document.querySelector<HTMLButtonElement>('#plan-day-btn')?.click(); }} />
             <BrainDump onSubmit={handleBrainDumpSubmit} onImageSubmit={handleImageSubmit} />
           </section>
 
@@ -418,9 +523,11 @@ export default function App() {
                           <div className="w-2 rounded-full h-6 bg-red-500 mr-2"></div>
                           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Urgent & High Priority</h2>
                        </div>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-4">
+                       <div className="columns-1 sm:columns-2 md:columns-1 lg:columns-2 gap-4">
                           {urgentTasks.map(task => (
-                            <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                            <div className="mb-4 break-inside-avoid" key={task.id}>
+                              <TaskCard task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                            </div>
                           ))}
                        </div>
                     </section>
@@ -432,9 +539,11 @@ export default function App() {
                           <div className="w-2 rounded-full h-6 bg-indigo-500 mr-2"></div>
                           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Up Next</h2>
                        </div>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-4">
+                       <div className="columns-1 sm:columns-2 md:columns-1 lg:columns-2 gap-4">
                           {normalTasks.map(task => (
-                            <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                            <div className="mb-4 break-inside-avoid" key={task.id}>
+                              <TaskCard task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                            </div>
                           ))}
                        </div>
                     </section>
@@ -488,6 +597,25 @@ export default function App() {
 
             <HabitTracker />
             <DailyPlanner tasks={tasks} />
+            
+            {agentLogs.length > 0 && (
+              <details className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 group">
+                <summary className="font-bold text-gray-900 tracking-tight cursor-pointer flex items-center justify-between list-none">
+                   Agent Activity
+                   <span className="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 max-h-48 overflow-y-auto pr-2 text-sm text-gray-600">
+                  {agentLogs.map((log, i) => (
+                    <div key={i} className="flex gap-2 border-b border-gray-50 pb-2 last:border-0">
+                      <span className="text-xs text-indigo-400 whitespace-nowrap mt-0.5">
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span>{log.note}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         </aside>
       </main>

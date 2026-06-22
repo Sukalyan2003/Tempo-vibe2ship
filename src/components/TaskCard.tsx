@@ -14,6 +14,7 @@ interface TaskCardProps {
 export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: TaskCardProps) {
   const { addToast } = useToast();
   const [isBreakingDown, setIsBreakingDown] = React.useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = React.useState(false);
 
   const handleBreakdown = async (subtask: any) => {
     if (!onUpdate) return;
@@ -28,7 +29,7 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
       const data = await response.json();
       if (response.ok && data.result) {
         // Replace this subtask with the new subtasks
-        const newSubtasks = [...task.subtasks];
+        const newSubtasks = [...(task.subtasks || [])];
         const idx = newSubtasks.findIndex(s => (typeof s === 'string' ? s : s.title) === subtaskTitle);
         if (idx !== -1) {
           newSubtasks.splice(idx, 1, ...data.result);
@@ -46,9 +47,12 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
   };
 
   const isHighPriority = task.priority === 'High';
+  const subtasks = task.subtasks || [];
+  const displaySubtasks = isExpanded ? subtasks : subtasks.slice(0, 3);
+  const hasMoreSubtasks = subtasks.length > 3;
   
   return (
-    <div className={`p-5 rounded-2xl border ${isHighPriority ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200 bg-white'} shadow-sm transition-all hover:shadow-md flex flex-col gap-4`}>
+    <div className={`p-5 rounded-2xl border h-fit ${isHighPriority ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200 bg-white'} shadow-sm transition-all hover:shadow-md flex flex-col gap-4`}>
       <div className="flex justify-between items-start gap-4 w-full">
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-gray-900 text-lg leading-tight break-words">{task.title}</h3>
@@ -81,11 +85,11 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
         </button>
       </div>
 
-      {task.subtasks.length > 0 && (
+      {subtasks.length > 0 && (
         <div className="bg-white/60 p-3 rounded-xl border border-gray-100">
           <p className="text-xs font-semibold text-gray-900 mb-2 uppercase tracking-wide">Suggested Steps</p>
           <ul className="space-y-1">
-            {task.subtasks.map((sub, idx) => {
+            {displaySubtasks.map((sub, idx) => {
               const title = typeof sub === 'string' ? sub : sub.title;
               const mins = typeof sub === 'object' && sub.estimatedMinutes ? sub.estimatedMinutes : null;
               return (
@@ -106,16 +110,24 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
               );
             })}
           </ul>
+          {hasMoreSubtasks && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors mt-3 w-full text-center"
+            >
+              {isExpanded ? 'View Less' : `View ${subtasks.length - 3} More`}
+            </button>
+          )}
         </div>
       )}
 
-      <div className="mt-auto pt-2 flex flex-wrap gap-2">
+      <div className="pt-2 flex flex-wrap gap-2">
         <button
           onClick={() => onExecute(task)}
           className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-colors ${task.draft ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
         >
           {task.draft ? <FileText className="w-4 h-4 fill-current shrink-0" /> : <Play className="w-4 h-4 fill-current shrink-0" />}
-          <span className="truncate">{task.draft ? 'View Draft' : 'Proactive Execute'}</span>
+          <span className="truncate">{task.draft ? 'View Draft' : 'Proactive Execute & Enrich'}</span>
         </button>
         <button
           onClick={() => onFocus && onFocus(task)}

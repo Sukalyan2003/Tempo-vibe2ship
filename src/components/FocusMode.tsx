@@ -20,9 +20,10 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
   const [sprintComplete, setSprintComplete] = useState(false);
   const [sprintCount, setSprintCount] = useLocalStorage('tempo_sprints', 0);
 
-  const firstIncompleteIdx = task?.subtasks.findIndex(s => typeof s === 'string' ? true : !s.completed) ?? 0;
+  const subtasks = task?.subtasks || [];
+  const firstIncompleteIdx = subtasks.findIndex(s => typeof s === 'string' ? true : !s.completed);
   const targetIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
-  const currentSubtask = task?.subtasks[targetIdx];
+  const currentSubtask = subtasks[targetIdx];
   const subtaskTitle = currentSubtask ? (typeof currentSubtask === 'string' ? currentSubtask : currentSubtask.title) : null;
 
   useEffect(() => {
@@ -44,21 +45,32 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
       interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
     } else if (isActive && timeLeft === 0) {
       setIsActive(false);
-      setSprintComplete(true);
-      setSprintCount(sprintCount + 1);
-      addToast('Sprint complete! Time for a short break.', 'success');
-      if (Notification.permission === 'granted') {
-        new Notification('Sprint Complete', { body: 'Time for a short break (eyes/stretch/water)!' });
+      if (!sprintComplete) {
+        setSprintComplete(true);
+        setSprintCount(c => c + 1);
+        addToast('Sprint complete! Time for a short break.', 'success');
+        if (Notification.permission === 'granted') {
+          new Notification('Sprint Complete', { body: 'Time for a short break (eyes/stretch/water)!' });
+        }
       }
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isActive, timeLeft, sprintCount, setSprintCount, addToast]);
+  }, [isActive, timeLeft, sprintComplete, setSprintCount, addToast]);
 
   if (!task) return null;
 
-  const toggleTimer = () => setIsActive(!isActive);
+  const toggleTimer = () => {
+    if (!isActive && timeLeft === 0) {
+      const mins = (typeof currentSubtask === 'object' && currentSubtask.estimatedMinutes) ? Math.max(1, currentSubtask.estimatedMinutes) : 25;
+      setTimeLeft(mins * 60);
+      setSprintComplete(false);
+      setIsActive(true);
+      return;
+    }
+    setIsActive(!isActive);
+  };
   const finishTask = () => {
     onCompleteTask(task.id);
     onClose();
@@ -69,7 +81,7 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-gray-900/95 backdrop-blur-md">
-      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-white/50 hover:text-white transition-colors z-10">
+      <button onClick={onClose} title="Close Focus Mode" aria-label="Close Focus Mode" className="absolute top-4 right-4 md:top-8 md:right-8 text-white/50 hover:text-white transition-colors z-10">
         <X className="w-8 h-8" />
       </button>
 
@@ -99,6 +111,8 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
         <div className="flex items-center justify-center gap-4">
           <button
             onClick={toggleTimer}
+            title={isActive ? 'Pause timer' : 'Start timer'}
+            aria-label={isActive ? 'Pause timer' : 'Start timer'}
             className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
               isActive ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-white text-gray-900 hover:scale-105'
             }`}
@@ -115,11 +129,11 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
           </button>
         </div>
 
-        {task.subtasks.length > 0 && (
+        {subtasks.length > 0 && (
           <div className="mt-12 text-left bg-white/5 rounded-3xl p-6 border border-white/10">
             <h3 className="text-white/70 text-sm uppercase tracking-wider font-semibold mb-4">Checklist</h3>
             <div className="space-y-3">
-              {task.subtasks.map((sub, i) => {
+              {subtasks.map((sub, i) => {
                 const title = typeof sub === 'string' ? sub : sub.title;
                 const completed = typeof sub === 'object' ? sub.completed : false;
                 return (

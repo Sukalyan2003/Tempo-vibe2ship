@@ -19,7 +19,7 @@ export function ActionModal({ isOpen, onClose, title, content, isLoading, onSave
       <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-3xl shadow-xl flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-5 md:p-6 border-b border-gray-100">
           <h2 className="text-xl font-semibold text-gray-900 truncate pr-4">Action: {title}</h2>
-          <button onClick={onClose} className="p-2 shrink-0 text-gray-400 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100">
+          <button onClick={onClose} title="Close" aria-label="Close" className="p-2 shrink-0 text-gray-400 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100">
             <X className="w-5 h-5" />
           </button>
         </div>

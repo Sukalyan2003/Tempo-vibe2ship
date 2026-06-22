@@ -35,7 +35,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             'bg-white border-gray-200 text-gray-900'
           }`}>
             <span className="flex-1 text-sm font-medium leading-relaxed">{t.message}</span>
-            <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))} className="shrink-0 p-1 rounded-full hover:bg-black/5 transition">
+            <button onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))} title="Close toast" aria-label="Close toast" className="shrink-0 p-1 rounded-full hover:bg-black/5 transition">
               <X className="w-4 h-4 opacity-50" />
             </button>
           </div>

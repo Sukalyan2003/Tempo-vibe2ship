@@ -25,15 +25,59 @@ GUARDRAILS
 - Reason about deadlines relative to the current date and time you are given — never to a guessed "today."
 - Every recommendation should help the user finish, not just feel organized.`;
 
-async function generateWithRetry(ai: GoogleGenAI, params: any, retries = 3) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (error: any) {
-      const is503 = error?.status === "UNAVAILABLE" || error?.message?.includes("503") || error?.message?.includes("high demand");
-      if (i === retries || !is503) throw error;
-      console.warn(`Gemini API 503. Retrying in ${1000 * (i + 1)}ms...`);
-      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+let lastWorkingModel: string | null = null;
+
+async function generateWithRetry(ai: GoogleGenAI, params: any, retries = 2) {
+  let fallbackModels = [params.model || "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"];
+  
+  if (lastWorkingModel && fallbackModels.includes(lastWorkingModel)) {
+    fallbackModels = [lastWorkingModel, ...fallbackModels.filter(m => m !== lastWorkingModel)];
+  }
+  
+  for (let m = 0; m < fallbackModels.length; m++) {
+    const currentModel = fallbackModels[m];
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const res = await ai.models.generateContent({ ...params, model: currentModel });
+        lastWorkingModel = currentModel;
+        return res;
+      } catch (error: any) {
+        const errMessage = error?.message?.toLowerCase() || "";
+        const errStatus = error?.status || error?.error?.status || "";
+        const errCode = error?.status || error?.error?.code || error?.code || 0;
+        
+        const isQuotaOrRateLimit = 
+          errStatus === "RESOURCE_EXHAUSTED" || 
+          errCode === 429 || 
+          errMessage.includes("429") ||
+          errMessage.includes("quota") || 
+          errMessage.includes("rate limit");
+          
+        const isTransient = 
+          errStatus === "UNAVAILABLE" || 
+          errCode === 503 ||
+          errMessage.includes("503");
+          
+        if (isQuotaOrRateLimit) {
+          console.warn(`[Model Fallback] Rate limit reached for ${currentModel}. Switching to next model...`);
+          if (m === fallbackModels.length - 1) throw error; // No more models
+          break; // Break inner retry loop to switch to the NEXT model immediately
+        }
+        
+        if (!isTransient) {
+          // If completely unexpected, switch to next model
+          if (m === fallbackModels.length - 1) throw error;
+          break; 
+        }
+        
+        // It's a 503 transient error, retry the same model with delay
+        if (i === retries) {
+          if (m === fallbackModels.length - 1) throw error;
+          break; 
+        }
+        console.warn(`Gemini API 503 with model ${currentModel}. Retrying in ${1000 * (i + 1)}ms...`);
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+      }
     }
   }
 }
@@ -92,10 +136,21 @@ async function startServer() {
         config: {
           systemInstruction: Object.values({ TEMPO_SYSTEM, ext: "You are a proactive task assistant. Extract tasks from the user's braindump. Assign a priority (High, Medium, Low), a deadline if applicable (e.g. 'This Friday'), a dueDate (ISO 8601 date string representing the inferred deadline based on the current date), and an urgency score from 1-10 (10 being most urgent). Propose 1-3 actionable subtasks if the task is complex." }).join("\n\n"),
           responseMimeType: "application/json",
-          responseSchema: taskResponseSchema as any
+          responseSchema: taskResponseSchema as any,
+          tools: [{ googleSearch: {} }]
         }
       });
-      res.json({ result: JSON.parse(response.text) });
+      let citations = [];
+      if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+        citations = response.candidates[0].groundingMetadata.groundingChunks.map((c: any) => c.web?.uri).filter(Boolean);
+      }
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(response.text);
+      } catch (e) {
+        throw new Error("Received malformed JSON from the AI model. Please try again.");
+      }
+      res.json({ result: parsedResult, citations });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -124,12 +179,23 @@ async function startServer() {
         model: "gemini-2.5-flash",
         contents,
         config: {
-          systemInstruction: Object.values({ TEMPO_SYSTEM, ext: "You are a proactive task assistant. Extract tasks from the user's image or text. Assign a priority (High, Medium, Low), a deadline if applicable, a dueDate (ISO 8601 date string representing the inferred deadline based on the current date), and an urgency score from 1-10 (10 being most urgent). Propose 1-3 actionable subtasks if the task is complex." }).join("\n\n"),
+          systemInstruction: Object.values({ TEMPO_SYSTEM, ext: "You are a proactive task assistant. Extract tasks from the user's document or image. Assign a priority (High, Medium, Low), a deadline if applicable, a dueDate (ISO 8601 date string representing the inferred deadline based on the current date), and an urgency score from 1-10 (10 being most urgent). Propose 1-3 actionable subtasks if the task is complex." }).join("\n\n"),
           responseMimeType: "application/json",
-          responseSchema: taskResponseSchema as any
+          responseSchema: taskResponseSchema as any,
+          tools: [{ googleSearch: {} }]
         }
       });
-      res.json({ result: JSON.parse(response.text) });
+      let citations = [];
+      if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+        citations = response.candidates[0].groundingMetadata.groundingChunks.map((c: any) => c.web?.uri).filter(Boolean);
+      }
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(response.text);
+      } catch (e) {
+        throw new Error("Received malformed JSON from the AI model. Please try again.");
+      }
+      res.json({ result: parsedResult, citations });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -138,24 +204,32 @@ async function startServer() {
 
   app.post("/api/gemini/execute", async (req, res) => {
     try {
-       if (!process.env.GEMINI_API_KEY) {
+      if (!process.env.GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY is not configured in the Secrets panel.");
-       }
-       const { task, action } = req.body;
-       const ai = new GoogleGenAI({
+      }
+      const { task, action } = req.body;
+      const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
         httpOptions: {
           headers: { 'User-Agent': 'aistudio-build' }
         }
       });
+      
       const response = await generateWithRetry(ai, {
         model: "gemini-2.5-flash",
-        contents: `Today is: ${new Date().toISOString()}.\nTask: ${task}\nRequested Action: ${action}\nProvide a helpful draft, outline, or actionable advice to immediately help the user complete this task. Format the response nicely.`,
+        contents: `Today is: ${new Date().toISOString()}.\nTask: ${task}\nRequested Action: ${action}\nProvide a helpful draft, outline, or actionable advice to immediately help the user complete this task. Enrich the response with real-world facts, links, or context. Format the response nicely.`,
         config: {
-          systemInstruction: TEMPO_SYSTEM
+          systemInstruction: TEMPO_SYSTEM,
+          tools: [{ googleSearch: {} }]
         }
       });
-      res.json({ result: response.text });
+      
+      let citations: string[] = [];
+      if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+        citations = response.candidates[0].groundingMetadata.groundingChunks.map((c: any) => c.web?.uri).filter(Boolean);
+      }
+
+      res.json({ result: response.text, citations });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -193,7 +267,13 @@ async function startServer() {
           }
         }
       });
-      res.json({ result: JSON.parse(response.text) });
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(response.text);
+      } catch (e) {
+        throw new Error("Received malformed JSON from the AI model. Please try again.");
+      }
+      res.json({ result: parsedResult });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -234,7 +314,120 @@ async function startServer() {
           }
         }
       });
-      res.json({ result: JSON.parse(response.text) });
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(response.text);
+      } catch (e) {
+        throw new Error("Received malformed JSON from the AI model. Please try again.");
+      }
+      res.json({ result: parsedResult });
+    } catch (error: any) {
+      console.error(error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/gemini/agent", async (req, res) => {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured in the Secrets panel.");
+      }
+      const { prompt, tasks } = req.body;
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+      
+      const response = await generateWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: `Today is: ${new Date().toISOString()}.\nCurrent Tasks: ${JSON.stringify(tasks)}\n\nUser command: ${prompt}`,
+        config: {
+          systemInstruction: Object.values({ 
+            TEMPO_SYSTEM, 
+            ext: "You are the conversational interface for Tempo. Execute user intent via tools. Always explain your planned action or answer the user directly if no tools are needed. Try to use answerQuestion to provide conversational info."
+          }).join("\n\n"),
+          tools: [{
+            functionDeclarations: [
+              {
+                name: "createTask",
+                description: "Create a new task when the user asks.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    priority: { type: Type.STRING, description: "High, Medium, Low" },
+                    dueDate: { type: Type.STRING, description: "ISO 8601 or null" }
+                  },
+                  required: ["title", "priority"]
+                }
+              },
+              {
+                name: "rescheduleTask",
+                description: "Reschedule an existing task.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    taskId: { type: Type.STRING },
+                    newDueDate: { type: Type.STRING, description: "ISO 8601 date-time string corresponding to the new time" }
+                  },
+                  required: ["taskId", "newDueDate"]
+                }
+              },
+              {
+                name: "breakdownTask",
+                description: "Break a task down into subtasks.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    taskId: { type: Type.STRING }
+                  },
+                  required: ["taskId"]
+                }
+              },
+              {
+                name: "completeTask",
+                description: "Mark a task as complete.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    taskId: { type: Type.STRING }
+                  },
+                  required: ["taskId"]
+                }
+              },
+              {
+                name: "planDay",
+                description: "Plan the day automatically."
+              },
+              {
+                name: "answerQuestion",
+                description: "Answer a question about the user's workload, or reply conversationally.",
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    answer: { type: Type.STRING }
+                  },
+                  required: ["answer"]
+                }
+              }
+            ]
+          }]
+        }
+      });
+
+      // functionCalls on the first candidate
+      let functionCalls: any[] = [];
+      let text = "";
+      if (response.candidates && response.candidates.length > 0) {
+        const parts = response.candidates[0].content.parts;
+        text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("\n");
+        functionCalls = parts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall);
+      } else {
+        text = response.text || "";
+        functionCalls = response.functionCalls || [];
+      }
+      
+      res.json({ result: { functionCalls, text } });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });

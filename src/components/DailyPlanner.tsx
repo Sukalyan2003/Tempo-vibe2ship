@@ -56,6 +56,7 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
         </div>
         
         <button
+          id="plan-day-btn"
           onClick={generateSchedule}
           disabled={isGenerating || tasks.length === 0}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 w-full sm:w-auto justify-center"

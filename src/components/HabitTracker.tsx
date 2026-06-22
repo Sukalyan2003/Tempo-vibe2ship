@@ -64,6 +64,8 @@ export function HabitTracker() {
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => toggleToday(habit.id)}
+                  title={isDone ? "Mark habit not done" : "Mark habit done"}
+                  aria-label={isDone ? "Mark habit not done" : "Mark habit done"}
                   className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
                     isDone ? 'bg-orange-500 text-white' : 'border-2 border-gray-300 text-transparent hover:border-orange-400'
                   }`}
@@ -93,6 +95,8 @@ export function HabitTracker() {
         />
         <button 
           type="submit"
+          title="Add Habit"
+          aria-label="Add Habit"
           disabled={!newTitle.trim()}
           className="bg-orange-500 text-white p-3 sm:p-2 rounded-xl flex items-center justify-center hover:bg-orange-600 disabled:opacity-50 transition-colors"
         >
