@@ -1,100 +1,198 @@
-import React from 'react';
-import { Terminal, Sparkles, FolderOpen, Settings, Play, Layout, UploadCloud } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useState } from 'react';
+import { Task } from './types';
+import { BrainDump } from './components/BrainDump';
+import { TaskCard } from './components/TaskCard';
+import { ActionModal } from './components/ActionModal';
+import { HabitTracker } from './components/HabitTracker';
+import { DailyPlanner } from './components/DailyPlanner';
+import { FocusMode } from './components/FocusMode';
+import { Target, CheckCircle2, Calendar as CalendarIcon, Link as LinkIcon, BarChart3 } from 'lucide-react';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 export default function App() {
+  const [tasks, setTasks] = useLocalStorage<Task[]>('tempo_tasks', []);
+  const [isCalendarConnected, setIsCalendarConnected] = useState(false);
+  const [focusTask, setFocusTask] = useState<Task | null>(null);
+  const [actionModal, setActionModal] = useState<{ isOpen: boolean; taskTile: string; content: string; isLoading: boolean }>({
+    isOpen: false,
+    taskTile: '',
+    content: '',
+    isLoading: false,
+  });
+
+  const handleBrainDumpSubmit = async (text: string) => {
+    try {
+      const response = await fetch('/api/gemini/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text }),
+      });
+      const data = await response.json();
+      if (response.ok && data.result) {
+        setTasks((prev) => [...prev, ...data.result]);
+      } else {
+        throw new Error(data.error || 'Failed to parse tasks');
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert(`API Error: ${e.message}\nMake sure your Gemini API key is active. Note: It's completely free to use via AI Studio, no credit card required.`);
+    }
+  };
+
+  const handleExecute = async (task: Task) => {
+    setActionModal({ isOpen: true, taskTile: task.title, content: '', isLoading: true });
+    try {
+      const response = await fetch('/api/gemini/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          task: task.title, 
+          action: `Draft a solution, outline, or quick start guide based on the subtasks: ${task.subtasks.join(', ')}` 
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.result) {
+        setActionModal((prev) => ({ ...prev, content: data.result, isLoading: false }));
+      } else {
+        throw new Error(data.error || 'Action failed to execute');
+      }
+    } catch (e: any) {
+      console.error(e);
+      setActionModal((prev) => ({ ...prev, content: `Error: ${e.message}`, isLoading: false }));
+    }
+  };
+
+  const handleComplete = (taskId: string) => {
+    setTasks((prev) => prev.filter(t => t.id !== taskId));
+  };
+
+  const sortedTasks = [...tasks].sort((a, b) => b.urgency - a.urgency);
+  const urgentTasks = sortedTasks.filter(t => t.urgency >= 7 || t.priority === 'High');
+  const normalTasks = sortedTasks.filter(t => t.urgency < 7 && t.priority !== 'High');
+
   return (
-    <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden">
-      {/* Sidebar Template */}
-      <aside className="w-16 md:w-64 flex flex-col border-r border-zinc-800 bg-zinc-950/50 backdrop-blur-xl shrink-0 transition-all duration-300">
-        <div className="h-14 flex items-center justify-center md:justify-start md:px-4 border-b border-zinc-800">
-          <div className="flex items-center gap-2 text-indigo-400">
-            <Sparkles className="w-5 h-5 shrink-0" />
-            <span className="font-semibold hidden md:block truncate tracking-tight">Vibecoding</span>
-          </div>
-        </div>
-        <nav className="flex-1 py-4 flex flex-col gap-2 px-2 overflow-y-auto">
-          <NavItem icon={<FolderOpen className="w-5 h-5" />} label="Explorer" active />
-          <NavItem icon={<Layout className="w-5 h-5" />} label="Canvas" />
-          <NavItem icon={<Terminal className="w-5 h-5" />} label="Terminal" />
-          <NavItem icon={<Settings className="w-5 h-5" />} label="Settings" />
-        </nav>
-      </aside>
-
-      {/* Main Content Template */}
-      <main className="flex-1 flex flex-col min-w-0 bg-zinc-950 relative">
-        {/* Subtle background glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-64 bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none" />
-
-        {/* Header */}
-        <header className="h-14 border-b border-zinc-800/80 flex items-center px-4 justify-between bg-zinc-950/80 backdrop-blur-md shrink-0 z-10">
-          <div className="flex items-center gap-2 text-sm text-zinc-400 font-mono">
-            <span>workspace</span>
-            <span className="text-zinc-600">/</span>
-            <span className="text-zinc-200">awaiting-files...</span>
-          </div>
-          <button className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 transition-all rounded-md text-sm font-medium shadow-lg shadow-indigo-500/5">
-            <Play className="w-4 h-4" />
-            <span className="hidden sm:inline">Initialize</span>
-          </button>
-        </header>
-
-        {/* Workspace Area */}
-        <div className="flex-1 p-4 md:p-8 overflow-y-auto w-full flex flex-col items-center justify-center z-10">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="text-center max-w-md w-full"
-          >
-            <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-3xl mx-auto flex items-center justify-center shadow-2xl mb-6 relative group overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <UploadCloud className="w-10 h-10 text-zinc-500 group-hover:text-indigo-400 transition-colors" />
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-24">
+      <header className="px-6 py-8 md:py-12 max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+              <Target className="w-6 h-6" />
             </div>
-            
-            <h1 className="text-3xl font-semibold mb-3 tracking-tight text-white">
-              Ready for Input
-            </h1>
-            <p className="text-zinc-400 text-sm leading-relaxed mb-8">
-              The foundational workspace is locked in. Drop your files, link your dependencies, or prompt the next architecture module to begin the vibecoding session.
-            </p>
-            
-            <div className="p-4 border border-zinc-800/60 bg-zinc-900/40 rounded-xl backdrop-blur-sm text-left mx-auto max-w-sm">
-               <pre className="text-[13px] text-zinc-500 font-mono overflow-x-auto leading-relaxed">
-                 <div className="flex gap-4">
-                   <span className="text-indigo-400/50">01</span>
-                   <span className="text-green-400">✓ Template initialized</span>
-                 </div>
-                 <div className="flex gap-4 mt-1">
-                   <span className="text-indigo-400/50">02</span>
-                   <span className="text-zinc-400 animate-pulse">Waiting for source payload...</span>
-                 </div>
-               </pre>
-            </div>
-          </motion.div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Tempo</h1>
+          </div>
+          <p className="text-gray-500 font-medium">Your proactive priority assistant.</p>
         </div>
+        
+        <button
+          onClick={() => setIsCalendarConnected(!isCalendarConnected)}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            isCalendarConnected 
+              ? 'bg-green-50 text-green-700 border border-green-200'
+              : 'bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm'
+          }`}
+        >
+          {isCalendarConnected ? (
+            <>
+              <CalendarIcon className="w-4 h-4 text-green-600" />
+              Calendar Synced
+            </>
+          ) : (
+            <>
+              <LinkIcon className="w-4 h-4" />
+              Connect Google Calendar
+            </>
+          )}
+        </button>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-6 grid grid-cols-1 md:grid-cols-[1fr_300px] gap-8">
+        <div className="space-y-12">
+          <section>
+            <BrainDump onSubmit={handleBrainDumpSubmit} />
+          </section>
+
+          {tasks.length > 0 ? (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {urgentTasks.length > 0 && (
+                <section>
+                   <div className="flex items-center gap-2 mb-6">
+                      <div className="w-2 rounded-full h-6 bg-red-500 mr-2"></div>
+                      <h2 className="text-2xl font-bold tracking-tight text-gray-900">Urgent & High Priority</h2>
+                   </div>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {urgentTasks.map(task => (
+                        <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={setFocusTask} />
+                      ))}
+                   </div>
+                </section>
+              )}
+
+              {normalTasks.length > 0 && (
+                <section>
+                   <div className="flex items-center gap-2 mb-6">
+                      <div className="w-2 rounded-full h-6 bg-indigo-500 mr-2"></div>
+                      <h2 className="text-2xl font-bold tracking-tight text-gray-900">Up Next</h2>
+                   </div>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {normalTasks.map(task => (
+                        <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={setFocusTask} />
+                      ))}
+                   </div>
+                </section>
+              )}
+            </div>
+          ) : (
+            <div className="py-24 text-center">
+               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-indigo-500" />
+               </div>
+               <h3 className="text-xl font-semibold text-gray-900 mb-2">Inbox Zero Achieved</h3>
+               <p className="text-gray-500 max-w-sm mx-auto">Drop your thoughts in the brain dump above when you're ready to plan your next moves.</p>
+            </div>
+          )}
+        </div>
+        
+        <aside>
+          <div className="sticky top-8 space-y-8">
+            <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-gray-500 mb-1">Productivity Score</div>
+                <div className="text-3xl font-bold text-gray-900">{tasks.length === 0 ? '100' : Math.max(0, 100 - (tasks.length * 5))}%</div>
+              </div>
+              <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                <BarChart3 className="w-6 h-6" />
+              </div>
+            </div>
+
+            {isCalendarConnected && (
+              <div className="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-6 border border-indigo-100 shadow-sm">
+                <div className="text-sm font-medium text-indigo-800 mb-1">Up Next on Calendar</div>
+                <div className="text-lg font-bold text-gray-900 break-words mb-2">Project Check-in</div>
+                <div className="text-sm text-gray-500 flex items-center gap-1">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                  In 45 minutes
+                </div>
+              </div>
+            )}
+            <HabitTracker />
+            <DailyPlanner tasks={tasks} />
+          </div>
+        </aside>
       </main>
-    </div>
-  );
-}
 
-function NavItem({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) {
-  return (
-    <button 
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative overflow-hidden ${
-        active 
-          ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 shadow-sm' 
-          : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 border border-transparent'
-      }`}
-    >
-      <div className={`shrink-0 ${active ? 'text-indigo-400' : ''}`}>{icon}</div>
-      <span className="font-medium text-sm hidden md:block">{label}</span>
-      {active && (
-        <motion.div 
-          layoutId="nav-indicator" 
-          className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-indigo-500 rounded-r-full"
-        />
-      )}
-    </button>
+      <ActionModal 
+        isOpen={actionModal.isOpen}
+        onClose={() => setActionModal({ ...actionModal, isOpen: false })}
+        title={actionModal.taskTile}
+        content={actionModal.content}
+        isLoading={actionModal.isLoading}
+      />
+      
+      <FocusMode 
+        task={focusTask}
+        onClose={() => setFocusTask(null)}
+        onCompleteTask={handleComplete}
+      />
+    </div>
   );
 }

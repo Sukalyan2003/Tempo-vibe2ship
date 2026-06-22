@@ -1,6 +1,6 @@
 {
-  "name": "Vibecoding Hackathon Template",
-  "description": "A sleek, dark-themed base workspace for a vibecoding hackathon.",
+  "name": "Tempo - Priority Assistant",
+  "description": "An AI-powered productivity companion that proactively assists users in planning, prioritizing, and completing tasks before deadlines are missed.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
