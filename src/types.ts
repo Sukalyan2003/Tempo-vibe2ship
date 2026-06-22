@@ -1,10 +1,19 @@
+export interface Subtask {
+  title: string;
+  estimatedMinutes?: number;
+  completed?: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
   priority: 'High' | 'Medium' | 'Low';
   deadline?: string;
+  dueDate?: string;
+  completedAt?: string;
   urgency: number;
-  subtasks: string[];
+  draft?: string;
+  subtasks: (string | Subtask)[];
 }
 
 export interface Habit {

@@ -1,24 +1,90 @@
-import React, { useState } from 'react';
-import { Task } from './types';
+import React, { useState, useEffect } from 'react';
+import { Task, Subtask } from './types';
 import { BrainDump } from './components/BrainDump';
 import { TaskCard } from './components/TaskCard';
 import { ActionModal } from './components/ActionModal';
 import { HabitTracker } from './components/HabitTracker';
 import { DailyPlanner } from './components/DailyPlanner';
 import { FocusMode } from './components/FocusMode';
-import { Target, CheckCircle2, Calendar as CalendarIcon, Link as LinkIcon, BarChart3 } from 'lucide-react';
+import { Target, CheckCircle2, BarChart3, AlertTriangle, LayoutGrid, List } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useToast } from './components/ToastContext';
 
 export default function App() {
+  const { addToast } = useToast();
   const [tasks, setTasks] = useLocalStorage<Task[]>('tempo_tasks', []);
-  const [isCalendarConnected, setIsCalendarConnected] = useState(false);
-  const [focusTask, setFocusTask] = useState<Task | null>(null);
-  const [actionModal, setActionModal] = useState<{ isOpen: boolean; taskTile: string; content: string; isLoading: boolean }>({
+  const [completedTasks, setCompletedTasks] = useLocalStorage<Task[]>('tempo_done', []);
+  const [isMatrixView, setIsMatrixView] = useState(false);
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const focusTask = tasks.find(t => t.id === focusTaskId) ?? null;
+  const [actionModal, setActionModal] = useState<{ isOpen: boolean; taskTile: string; content: string; isLoading: boolean; taskId?: string }>({
     isOpen: false,
     taskTile: '',
     content: '',
     isLoading: false,
   });
+  const [escalationReasons, setEscalationReasons] = useLocalStorage<Record<string, string>>('tempo_escalations', {});
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(console.error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let changed = false;
+    const now = new Date();
+    
+    // Prune stale reasons and clone
+    const existingTaskIds = new Set(tasks.map(t => t.id));
+    const newReasons = Object.keys(escalationReasons).reduce((acc, key) => {
+      if (existingTaskIds.has(key)) acc[key] = escalationReasons[key];
+      else changed = true;
+      return acc;
+    }, {} as Record<string, string>);
+    
+    const updatedTasks = tasks.map(t => {
+      if (!t.dueDate) return t;
+      const due = new Date(t.dueDate);
+      const hoursLeft = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+      
+      const isPastDue = hoursLeft < 0;
+      if (isPastDue && t.urgency < 10) {
+        changed = true;
+        const msg = `Overdue by ${Math.floor(Math.abs(hoursLeft))} hours. Urgency maximized.`;
+        if (newReasons[t.id] !== msg) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Task Overdue', { body: `${t.title} is overdue!` });
+          }
+        }
+        newReasons[t.id] = msg;
+        return { ...t, urgency: 10, priority: 'High' as const };
+      }
+      if (hoursLeft >= 0 && hoursLeft <= 24 && t.urgency < 8) {
+        changed = true;
+        const msg = `Due within 24h. Urgency escalated.`;
+        if (newReasons[t.id] !== msg) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Task Due Soon', { body: `${t.title} is due within 24 hours.` });
+          }
+        }
+        newReasons[t.id] = msg;
+        return { ...t, urgency: Math.max(8, t.urgency + 3), priority: 'High' as const };
+      }
+      return t;
+    });
+
+    if (changed) {
+      setTasks(updatedTasks);
+      setEscalationReasons(newReasons);
+    }
+  }, [tasks, setTasks, escalationReasons, setEscalationReasons]);
+
+  const atRiskTasks = tasks.filter(t => {
+    if (!t.dueDate) return false;
+    const hoursLeft = (new Date(t.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60);
+    return hoursLeft <= 24;
+  }).sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
 
   const handleBrainDumpSubmit = async (text: string) => {
     try {
@@ -29,25 +95,57 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.result) {
-        setTasks((prev) => [...prev, ...data.result]);
+        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID() }))]);
       } else {
         throw new Error(data.error || 'Failed to parse tasks');
       }
     } catch (e: any) {
       console.error(e);
-      alert(`API Error: ${e.message}\nMake sure your Gemini API key is active. Note: It's completely free to use via AI Studio, no credit card required.`);
+      addToast(`API Error: ${e.message}`, 'error');
+    }
+  };
+
+  const handleImageSubmit = async (base64: string, mimeType: string) => {
+    try {
+      addToast('Analyzing image...', 'info');
+      const response = await fetch('/api/gemini/parse-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imagePart: {
+            inlineData: {
+              data: base64,
+              mimeType
+            }
+          }
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.result) {
+        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID() }))]);
+        addToast('Tasks extracted from image', 'success');
+      } else {
+        throw new Error(data.error || 'Failed to parse image');
+      }
+    } catch (e: any) {
+      console.error(e);
+      addToast(`API Error: ${e.message}`, 'error');
     }
   };
 
   const handleExecute = async (task: Task) => {
-    setActionModal({ isOpen: true, taskTile: task.title, content: '', isLoading: true });
+    if (task.draft) {
+      setActionModal({ isOpen: true, taskTile: task.title, content: task.draft, isLoading: false, taskId: task.id });
+      return;
+    }
+    setActionModal({ isOpen: true, taskTile: task.title, content: '', isLoading: true, taskId: task.id });
     try {
       const response = await fetch('/api/gemini/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           task: task.title, 
-          action: `Draft a solution, outline, or quick start guide based on the subtasks: ${task.subtasks.join(', ')}` 
+          action: `Draft a solution, outline, or quick start guide based on the subtasks: ${task.subtasks.map((s: string | Subtask) => typeof s === 'string' ? s : s.title).join(', ')}` 
         }),
       });
       const data = await response.json();
@@ -63,12 +161,103 @@ export default function App() {
   };
 
   const handleComplete = (taskId: string) => {
-    setTasks((prev) => prev.filter(t => t.id !== taskId));
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      setCompletedTasks(prev => {
+        const next = [...prev, { ...task, completedAt: new Date().toISOString().split('T')[0] }];
+        if (next.length > 50) return next.slice(next.length - 50);
+        return next;
+      });
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    }
+  };
+
+  const handleUpdateTask = (updatedTask: Task) => {
+    setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+  };
+
+  const handleUpdateSubtask = (taskId: string, subtaskIdx: number, completed: boolean) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id !== taskId) return t;
+      const newSubtasks = [...t.subtasks];
+      const sub = newSubtasks[subtaskIdx];
+      newSubtasks[subtaskIdx] = typeof sub === 'string' ? { title: sub, completed } : { ...sub, completed };
+      return { ...t, subtasks: newSubtasks };
+    }));
+  };
+
+  const handleSaveDraft = () => {
+    if (actionModal.taskId && actionModal.content) {
+      setTasks(prev => prev.map(t => t.id === actionModal.taskId ? { ...t, draft: actionModal.content } : t));
+      addToast('Draft saved to task', 'success');
+      setActionModal(prev => ({ ...prev, isOpen: false }));
+    }
+  };
+
+  const loadSampleTasks = () => {
+    const now = new Date();
+    setTasks([
+      {
+        id: crypto.randomUUID(),
+        title: 'Finalize Hackathon Submission',
+        priority: 'High',
+        urgency: 10,
+        dueDate: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours from now
+        subtasks: [
+          { title: 'Record video demo', estimatedMinutes: 30, completed: false },
+          { title: 'Write README.md', estimatedMinutes: 20, completed: true },
+          { title: 'Submit on Devpost', estimatedMinutes: 10, completed: false }
+        ]
+      },
+      {
+        id: crypto.randomUUID(),
+        title: 'Call the DMV',
+        priority: 'Medium',
+        urgency: 5,
+        dueDate: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString(), // 2 days from now
+        subtasks: [
+          { title: 'Find vehicle registration', estimatedMinutes: 5, completed: false },
+          { title: 'Wait on hold', estimatedMinutes: 45, completed: false }
+        ]
+      },
+      {
+        id: crypto.randomUUID(),
+        title: 'Cancel gym membership',
+        priority: 'Medium',
+        urgency: 8,
+        dueDate: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago (Overdue)
+        subtasks: [
+          { title: 'Find contract terms', estimatedMinutes: 10, completed: false },
+          { title: 'Draft email request', estimatedMinutes: 15, completed: false }
+        ]
+      },
+      {
+        id: crypto.randomUUID(),
+        title: 'Organize desk drawer',
+        priority: 'Low',
+        urgency: 2,
+        subtasks: [
+          { title: 'Empty out all items', estimatedMinutes: 5, completed: false },
+          { title: 'Sort into keep/throw', estimatedMinutes: 15, completed: false }
+        ]
+      }
+    ]);
   };
 
   const sortedTasks = [...tasks].sort((a, b) => b.urgency - a.urgency);
   const urgentTasks = sortedTasks.filter(t => t.urgency >= 7 || t.priority === 'High');
   const normalTasks = sortedTasks.filter(t => t.urgency < 7 && t.priority !== 'High');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayCompleted = completedTasks.filter(t => t.completedAt === todayStr);
+  const totalRelevant = tasks.length + todayCompleted.length;
+  const productivityScore = totalRelevant === 0 ? 100 : Math.round((todayCompleted.length / totalRelevant) * 100);
+
+  // Matrix categories
+  const q1 = tasks.filter(t => (t.urgency >= 7 || (t.dueDate && (new Date(t.dueDate).getTime() - new Date().getTime())/(1000*60*60) < 48)) && (t.priority === 'High' || t.priority === 'Medium'));
+  const q2 = tasks.filter(t => !(t.urgency >= 7 || (t.dueDate && (new Date(t.dueDate).getTime() - new Date().getTime())/(1000*60*60) < 48)) && (t.priority === 'High' || t.priority === 'Medium'));
+  const q3 = tasks.filter(t => (t.urgency >= 7 || (t.dueDate && (new Date(t.dueDate).getTime() - new Date().getTime())/(1000*60*60) < 48)) && t.priority === 'Low');
+  const q4 = tasks.filter(t => !(t.urgency >= 7 || (t.dueDate && (new Date(t.dueDate).getTime() - new Date().getTime())/(1000*60*60) < 48)) && t.priority === 'Low');
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-24">
@@ -82,63 +271,119 @@ export default function App() {
           </div>
           <p className="text-gray-500 font-medium">Your proactive priority assistant.</p>
         </div>
-        
-        <button
-          onClick={() => setIsCalendarConnected(!isCalendarConnected)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-            isCalendarConnected 
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:shadow-sm'
-          }`}
-        >
-          {isCalendarConnected ? (
-            <>
-              <CalendarIcon className="w-4 h-4 text-green-600" />
-              Calendar Synced
-            </>
-          ) : (
-            <>
-              <LinkIcon className="w-4 h-4" />
-              Connect Google Calendar
-            </>
-          )}
-        </button>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 grid grid-cols-1 md:grid-cols-[1fr_300px] gap-8">
         <div className="space-y-12">
           <section>
-            <BrainDump onSubmit={handleBrainDumpSubmit} />
+            <BrainDump onSubmit={handleBrainDumpSubmit} onImageSubmit={handleImageSubmit} />
           </section>
 
-          {tasks.length > 0 ? (
-            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {urgentTasks.length > 0 && (
-                <section>
-                   <div className="flex items-center gap-2 mb-6">
-                      <div className="w-2 rounded-full h-6 bg-red-500 mr-2"></div>
-                      <h2 className="text-2xl font-bold tracking-tight text-gray-900">Urgent & High Priority</h2>
-                   </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {urgentTasks.map(task => (
-                        <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={setFocusTask} />
-                      ))}
-                   </div>
-                </section>
-              )}
+          {atRiskTasks.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+                <h2 className="text-xl font-bold tracking-tight text-red-900">Needs Attention Now</h2>
+              </div>
+              <div className="space-y-3">
+                {atRiskTasks.map(t => {
+                  const isOverdue = new Date(t.dueDate!).getTime() < new Date().getTime();
+                  return (
+                    <div key={t.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white rounded-2xl p-4 border border-red-100 shadow-sm gap-4">
+                      <div>
+                        <div className="font-semibold text-gray-900 flex flex-wrap items-center gap-2 text-lg">
+                          {t.title}
+                          {isOverdue && <span className="bg-red-100 text-red-700 text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">Overdue</span>}
+                        </div>
+                        <div className="text-sm text-red-600 font-medium mt-1">
+                          {escalationReasons[t.id] || "Due soon"}
+                        </div>
+                      </div>
+                      <button
+                         onClick={() => setFocusTaskId(t.id)}
+                         className="px-4 py-2 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition flex items-center justify-center shrink-0 shadow-sm"
+                      >
+                        Focus Now
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-              {normalTasks.length > 0 && (
-                <section>
-                   <div className="flex items-center gap-2 mb-6">
-                      <div className="w-2 rounded-full h-6 bg-indigo-500 mr-2"></div>
-                      <h2 className="text-2xl font-bold tracking-tight text-gray-900">Up Next</h2>
-                   </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {normalTasks.map(task => (
-                        <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={setFocusTask} />
-                      ))}
-                   </div>
-                </section>
+          {tasks.length > 0 && (
+            <div className="flex justify-end mb-4">
+              <div className="bg-white p-1 rounded-lg border border-gray-200 shadow-sm inline-flex">
+                <button onClick={() => setIsMatrixView(false)} className={`p-1.5 rounded-md flex items-center transition ${!isMatrixView ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`} title="List View"><List className="w-4 h-4" /></button>
+                <button onClick={() => setIsMatrixView(true)} className={`p-1.5 rounded-md flex items-center transition ${isMatrixView ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`} title="Eisenhower Matrix"><LayoutGrid className="w-4 h-4" /></button>
+              </div>
+            </div>
+          )}
+
+          {tasks.length > 0 ? (
+            <div className="space-y-12">
+              {isMatrixView ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <section className="bg-red-50/30 p-4 rounded-3xl border border-red-100">
+                    <h3 className="font-bold text-red-900 mb-4">Do First (Urgent & Important)</h3>
+                    <div className="space-y-3">
+                      {q1.map(task => <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />)}
+                      {q1.length === 0 && <div className="text-sm text-red-800/60 p-2 italic text-center">Empty</div>}
+                    </div>
+                  </section>
+                  <section className="bg-indigo-50/30 p-4 rounded-3xl border border-indigo-100">
+                    <h3 className="font-bold text-indigo-900 mb-4">Schedule (Important, Not Urgent)</h3>
+                    <div className="space-y-3">
+                      {q2.map(task => <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />)}
+                      {q2.length === 0 && <div className="text-sm text-indigo-800/60 p-2 italic text-center">Empty</div>}
+                    </div>
+                  </section>
+                  <section className="bg-amber-50/30 p-4 rounded-3xl border border-amber-100">
+                    <h3 className="font-bold text-amber-900 mb-4">Quick Wins</h3>
+                    <div className="space-y-3">
+                      {q3.map(task => <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />)}
+                      {q3.length === 0 && <div className="text-sm text-amber-800/60 p-2 italic text-center">Empty</div>}
+                    </div>
+                  </section>
+                  <section className="bg-gray-50/50 p-4 rounded-3xl border border-gray-200">
+                    <h3 className="font-bold text-gray-700 mb-4">Eliminate (Neither)</h3>
+                    <div className="space-y-3">
+                      {q4.map(task => <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />)}
+                      {q4.length === 0 && <div className="text-sm text-gray-500/60 p-2 italic text-center">Empty</div>}
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <>
+                  {urgentTasks.length > 0 && (
+                    <section>
+                       <div className="flex items-center gap-2 mb-6">
+                          <div className="w-2 rounded-full h-6 bg-red-500 mr-2"></div>
+                          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Urgent & High Priority</h2>
+                       </div>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {urgentTasks.map(task => (
+                            <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                          ))}
+                       </div>
+                    </section>
+                  )}
+
+                  {normalTasks.length > 0 && (
+                    <section>
+                       <div className="flex items-center gap-2 mb-6">
+                          <div className="w-2 rounded-full h-6 bg-indigo-500 mr-2"></div>
+                          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Up Next</h2>
+                       </div>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {normalTasks.map(task => (
+                            <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
+                          ))}
+                       </div>
+                    </section>
+                  )}
+                </>
               )}
             </div>
           ) : (
@@ -147,7 +392,13 @@ export default function App() {
                   <CheckCircle2 className="w-8 h-8 text-indigo-500" />
                </div>
                <h3 className="text-xl font-semibold text-gray-900 mb-2">Inbox Zero Achieved</h3>
-               <p className="text-gray-500 max-w-sm mx-auto">Drop your thoughts in the brain dump above when you're ready to plan your next moves.</p>
+               <p className="text-gray-500 max-w-sm mx-auto mb-6">Drop your thoughts in the brain dump above when you're ready to plan your next moves.</p>
+               <button
+                 onClick={loadSampleTasks}
+                 className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 shadow-sm transition-colors text-sm"
+               >
+                 Load sample tasks
+               </button>
             </div>
           )}
         </div>
@@ -156,24 +407,28 @@ export default function App() {
           <div className="sticky top-8 space-y-8">
             <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-gray-500 mb-1">Productivity Score</div>
-                <div className="text-3xl font-bold text-gray-900">{tasks.length === 0 ? '100' : Math.max(0, 100 - (tasks.length * 5))}%</div>
+                <div className="text-sm font-medium text-gray-500 mb-1">Today's Completion</div>
+                <div className="text-3xl font-bold text-gray-900">{productivityScore}%</div>
               </div>
               <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
                 <BarChart3 className="w-6 h-6" />
               </div>
             </div>
 
-            {isCalendarConnected && (
-              <div className="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-6 border border-indigo-100 shadow-sm">
-                <div className="text-sm font-medium text-indigo-800 mb-1">Up Next on Calendar</div>
-                <div className="text-lg font-bold text-gray-900 break-words mb-2">Project Check-in</div>
-                <div className="text-sm text-gray-500 flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-                  In 45 minutes
+            {todayCompleted.length > 0 && (
+              <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm">
+                <h3 className="font-bold text-gray-900 mb-3">Done Today</h3>
+                <div className="space-y-2">
+                  {todayCompleted.map(t => (
+                    <div key={t.id} className="flex gap-2 items-center text-sm text-gray-500 line-through">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      {t.title}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
+
             <HabitTracker />
             <DailyPlanner tasks={tasks} />
           </div>
@@ -186,12 +441,14 @@ export default function App() {
         title={actionModal.taskTile}
         content={actionModal.content}
         isLoading={actionModal.isLoading}
+        onSaveDraft={handleSaveDraft}
       />
       
       <FocusMode 
         task={focusTask}
-        onClose={() => setFocusTask(null)}
+        onClose={() => setFocusTaskId(null)}
         onCompleteTask={handleComplete}
+        onUpdateSubtask={handleUpdateSubtask}
       />
     </div>
   );

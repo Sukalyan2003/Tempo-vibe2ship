@@ -14,24 +14,34 @@ Tempo abstracts away the administrative burden of task management using the reas
 
 Tempo directly addresses the "Agentic Depth" requirement (20% evaluation weight) through the following autonomous mechanisms:
 
-### A. Intelligent Braindump & NLP Ingestion
-- **How it works:** Users use the **Voice Input** or text field to pour out everything on their mind (e.g., "I gotta email Sarah by noon and also buy dog food sometime today"). 
-- **The Agent:** A backend Express endpoint uses `@google/genai` with **Structured JSON Outputs** to extract task titles, assign explicit priorities (Low/Medium/High), compute a smart Urgency Score out of 10, and identify human-readable deadlines.
+### A. Intelligent Braindump & Multimodal Ingestion
+- **How it works:** Users can speak, type their rambling thoughts, or upload an image (e.g., a photo of a syllabus or a receipt). 
+- **The Agent:** A backend Express endpoint uses `@google/genai` (handling both text and base64 images) with **Structured JSON Outputs** to extract task titles, assign explicit priorities (Low/Medium/High), compute a smart Urgency Score out of 10, and identify ISO 8601 deadlines.
 
-### B. Auto-Breakdown of Complex Assignments
+### B. Auto-Escalation & True Proactivity
+- **How it works:** Time is constantly monitored.
+- **The Agent:** As deadlines approach, Tempo automatically escalates task urgency in the background, triggers a "Needs Attention Now" banner, and dispatches native browser notifications for tasks that become at-risk or overdue—preventing last-minute disasters without spamming the user.
+
+### C. Auto-Breakdown of Complex Assignments
 - **How it works:** Overwhelming tasks often cause procrastination. 
-- **The Agent:** During the parsing phase, Gemini automatically generates 1-3 actionable, bite-sized subtasks for any complex item, reducing the barrier to getting started.
+- **The Agent:** During the parsing phase, Gemini automatically generates actionable, bite-sized subtasks with estimated time completions. Users can recursively "break down further" if a subtask is still too large.
 
-### C. Proactive Execution Engine
+### D. Proactive Execution Engine & Draft Persistence
 - **How it works:** A "Proactive Execute" button lives on every task. 
-- **The Agent:** Clicking it triggers an autonomous workflow where Gemini immediately begins working on the task. For example, if the task is "Write Biology Report," the agent will draft an outline or introductory paragraph, returning it in a clean Markdown-rendered modal. This is the difference between *reminding* a user and *helping* them.
+- **The Agent:** Clicking it triggers an autonomous workflow where Gemini immediately begins working on the task (e.g., drafting an email or outlining a report). 
+- **Persistence:** Generated drafts can be seamlessly saved back onto the task card and reopened instantly without re-prompting the model, closing the gap from "suggestion" to "action".
 
-### D. Algorithmic Daily Planner
+### E. Algorithmic Daily Planner
 - **How it works:** A dedicated "Auto-plan day" capability.
 - **The Agent:** Tempo takes the user's active tasks, feeds them to Gemini as context, and generates a logical chronological timeline for the day (e.g., "09:00 AM - 10:30 AM"). It provides realistic time constraints and a sentence of specialized advice on tackling the block efficiently.
 
-### E. Immersive Focus Mode (Zero Distraction)
-- **How it works:** A full-screen Pomodoro-style timer (25 minutes) that strips away the rest of the application UI. It features a large countdown, a checklist of subtasks, and a one-click completion trigger to keep the user deeply locked into singular execution.
+### F. Dynamic Eisenhower Matrix & Workload Management
+- **How it works:** A secondary layout option categorizes tasks into Do First, Schedule, Quick Wins, and Eliminate.
+- **The Agent:** Tasks are routed into these quadrants based on a combination of their algorithmic Urgency Score and explicitly assigned Priority properties.
+
+### G. Smart Focus Mode (Zero Distraction)
+- **How it works:** A full-screen immersive timer that strips away the rest of the application UI. 
+- **The Agent:** The timer automatically sets its duration not to a generic 25 minutes, but logically to the estimated completion time of the specific subtask you are focusing on. It features a large countdown, a checklist of subtasks, and a one-click completion trigger to keep the user deeply locked into singular execution.
 
 ## 3. Product Experience & Design
 - **Mental Load Reduction:** The UI groups tasks intelligently by Urgency Score and Priority, automatically promoting critical imminent tasks (Urgency >= 7) to the top of the queue with clear visual distinction (Red vs Indigo badges).

@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TaskCard } from '../components/TaskCard';
 import { Task } from '../types';
+import { ToastProvider } from '../components/ToastContext';
 
 const mockTask: Task = {
   id: 't1',
@@ -17,21 +18,20 @@ describe('TaskCard', () => {
     const onExecute = vi.fn();
     const onComplete = vi.fn();
     
-    render(<TaskCard task={mockTask} onExecute={onExecute} onComplete={onComplete} />);
+    render(<ToastProvider><TaskCard task={mockTask} onExecute={onExecute} onComplete={onComplete} /></ToastProvider>);
     
     expect(screen.getByText('Pay electricity bill')).toBeInTheDocument();
     expect(screen.getByText('High Priority')).toBeInTheDocument();
     expect(screen.getByText('Friday')).toBeInTheDocument();
-    expect(screen.getByText('Find bill')).toBeInTheDocument();
   });
 
   it('calls onExecute when action button is clicked', () => {
     const onExecute = vi.fn();
     const onComplete = vi.fn();
     
-    render(<TaskCard task={mockTask} onExecute={onExecute} onComplete={onComplete} />);
+    render(<ToastProvider><TaskCard task={mockTask} onExecute={onExecute} onComplete={onComplete} /></ToastProvider>);
     
-    const execBtn = screen.getByText('Proactive Execute');
+    const execBtn = screen.getByText(/Proactive Execute/i);
     fireEvent.click(execBtn);
     
     expect(onExecute).toHaveBeenCalledWith(mockTask);

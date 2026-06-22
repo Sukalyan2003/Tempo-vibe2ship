@@ -1,19 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Sparkles, Loader2, Mic, MicOff } from 'lucide-react';
+import { Sparkles, Loader2, Mic, MicOff, ImagePlus } from 'lucide-react';
+import { useToast } from './ToastContext';
 
 interface BrainDumpProps {
   onSubmit: (text: string) => Promise<void>;
+  onImageSubmit?: (base64: string, mimeType: string) => Promise<void>;
 }
 
-export function BrainDump({ onSubmit }: BrainDumpProps) {
+export function BrainDump({ onSubmit, onImageSubmit }: BrainDumpProps) {
+  const { addToast } = useToast();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleRecording = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser.');
+      addToast('Speech recognition is not supported in this browser.', 'error');
       return;
     }
 
@@ -53,6 +57,36 @@ export function BrainDump({ onSubmit }: BrainDumpProps) {
     recognition.start();
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onImageSubmit) return;
+
+    if (!file.type.startsWith('image/')) {
+      addToast('Please upload a valid image file.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('Image must be under 5MB.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        setIsSubmitting(true);
+        const base64WithScheme = reader.result as string;
+        const base64Data = base64WithScheme.split(',')[1];
+        await onImageSubmit(base64Data, file.type);
+      } finally {
+        setIsSubmitting(false);
+      }
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || isSubmitting) return;
@@ -72,7 +106,7 @@ export function BrainDump({ onSubmit }: BrainDumpProps) {
         Brain Dump
       </label>
       <p className="text-sm text-gray-500 mb-4">
-        Paste everything you need to do, no matter how chaotic. Gemini will parse, prioritize, and structure your tasks automatically.
+        Paste everything you need to do, upload a picture of your whiteboard, or speak your thoughts. Gemini will parse, prioritize, and structure your tasks automatically.
       </p>
       <div className="relative">
         <textarea
@@ -85,10 +119,31 @@ export function BrainDump({ onSubmit }: BrainDumpProps) {
           disabled={isSubmitting}
         />
         <div className="absolute bottom-3 right-3 flex items-center gap-2">
+          {onImageSubmit && (
+            <>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isSubmitting}
+                className="p-2 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                title="Upload image"
+              >
+                <ImagePlus className="w-5 h-5" />
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={toggleRecording}
-            className={`p-2 rounded-xl transition-colors ${
+            disabled={isSubmitting}
+            className={`p-2 rounded-xl transition-colors disabled:opacity-50 ${
               isRecording 
                 ? 'bg-red-100 text-red-600 animate-pulse' 
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'

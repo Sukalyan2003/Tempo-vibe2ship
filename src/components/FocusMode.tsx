@@ -6,18 +6,29 @@ interface FocusModeProps {
   task: Task | null;
   onClose: () => void;
   onCompleteTask: (taskId: string) => void;
+  onUpdateSubtask: (taskId: string, subtaskIdx: number, completed: boolean) => void;
 }
 
-export function FocusMode({ task, onClose, onCompleteTask }: FocusModeProps) {
+export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: FocusModeProps) {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [activeSubtaskIdx, setActiveSubtaskIdx] = useState<number>(0);
+
+  const firstIncompleteIdx = task?.subtasks.findIndex(s => typeof s === 'string' ? true : !s.completed) ?? 0;
+  const targetIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
+  const currentSubtask = task?.subtasks[targetIdx];
+  const subtaskTitle = currentSubtask ? (typeof currentSubtask === 'string' ? currentSubtask : currentSubtask.title) : null;
 
   useEffect(() => {
-    if (task) {
-      setTimeLeft(25 * 60);
+    if (task && (task.id !== activeTaskId || targetIdx !== activeSubtaskIdx)) {
+      setActiveTaskId(task.id);
+      setActiveSubtaskIdx(targetIdx);
+      const mins = (typeof currentSubtask === 'object' && currentSubtask.estimatedMinutes) ? currentSubtask.estimatedMinutes : 25;
+      setTimeLeft(mins * 60);
       setIsActive(false);
     }
-  }, [task]);
+  }, [task, activeTaskId, activeSubtaskIdx, targetIdx, currentSubtask]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -48,13 +59,15 @@ export function FocusMode({ task, onClose, onCompleteTask }: FocusModeProps) {
         <X className="w-8 h-8" />
       </button>
 
-      <div className="max-w-xl w-full text-center space-y-8 animate-in zoom-in fade-in duration-300">
+      <div className="max-w-xl w-full text-center space-y-8">
         <div>
           <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-sm font-medium mb-4 uppercase tracking-widest">
             Focus Mode
           </span>
           <h2 className="text-3xl md:text-5xl font-bold text-white mb-2">{task.title}</h2>
-          <p className="text-gray-400 text-lg">Remove all distractions. Focus on the task at hand.</p>
+          <p className="text-gray-400 text-lg">
+            {subtaskTitle ? `Current focus: ${subtaskTitle}` : 'Remove all distractions. Focus on the task at hand.'}
+          </p>
         </div>
 
         <div className="py-8">
@@ -86,12 +99,21 @@ export function FocusMode({ task, onClose, onCompleteTask }: FocusModeProps) {
           <div className="mt-12 text-left bg-white/5 rounded-3xl p-6 border border-white/10">
             <h3 className="text-white/70 text-sm uppercase tracking-wider font-semibold mb-4">Checklist</h3>
             <div className="space-y-3">
-              {task.subtasks.map((sub, i) => (
-                <label key={i} className="flex items-start gap-3 text-white/90 group cursor-pointer">
-                  <input type="checkbox" className="mt-1 w-5 h-5 rounded border-white/20 bg-white/10 text-indigo-500 focus:ring-offset-gray-900 transition-all cursor-pointer" />
-                  <span className="group-hover:text-white transition-colors">{sub}</span>
-                </label>
-              ))}
+              {task.subtasks.map((sub, i) => {
+                const title = typeof sub === 'string' ? sub : sub.title;
+                const completed = typeof sub === 'object' ? sub.completed : false;
+                return (
+                  <label key={i} className="flex items-start gap-3 text-white/90 group cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="mt-1 w-5 h-5 rounded border-white/20 bg-white/10 text-indigo-500 focus:ring-offset-gray-900 transition-all cursor-pointer" 
+                      checked={!!completed}
+                      onChange={(e) => onUpdateSubtask(task.id, i, e.target.checked)}
+                    />
+                    <span className={`group-hover:text-white transition-colors ${completed ? 'line-through text-white/50' : ''}`}>{title}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}

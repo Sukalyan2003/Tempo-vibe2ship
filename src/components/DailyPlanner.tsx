@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Task } from '../types';
 import { Clock, CalendarDays, Loader2, Sparkles } from 'lucide-react';
+import { useToast } from './ToastContext';
 
 interface ScheduledBlock {
   timeFrame: string;
@@ -14,6 +15,7 @@ interface DailyPlannerProps {
 }
 
 export function DailyPlanner({ tasks }: DailyPlannerProps) {
+  const { addToast } = useToast();
   const [schedule, setSchedule] = useState<ScheduledBlock[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -34,7 +36,7 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
       }
     } catch (e: any) {
       console.error(e);
-      alert(`Schedule generation failed: ${e.message}`);
+      addToast(`Schedule generation failed: ${e.message}`, 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -63,7 +65,30 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
       </div>
 
       {schedule.length > 0 ? (
-        <div className="space-y-4 relative before:absolute before:inset-0 before:ml-[1.125rem] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+        <>
+          {(() => {
+            let totalMins = 0;
+            schedule.forEach(b => {
+              const task = tasks.find(t => t.id === b.taskId || t.title === b.taskTitle);
+              if (task && task.subtasks) {
+                task.subtasks.forEach(sub => {
+                  totalMins += (typeof sub === 'object' && sub.estimatedMinutes) ? sub.estimatedMinutes : 15;
+                });
+              } else {
+                totalMins += 30;
+              }
+            });
+            if (totalMins > 480) { // 8 hours
+               const overHours = Math.round((totalMins - 480) / 60);
+               return (
+                 <div className="mb-6 p-4 bg-amber-50 text-amber-900 border-l-4 border-amber-400 rounded-lg text-sm font-medium shadow-sm">
+                   That's about ~{overHours + 8} hours of work — more than fits in a single day. Want to defer a few tasks?
+                 </div>
+               );
+            }
+            return null;
+          })()}
+          <div className="space-y-4 relative before:absolute before:inset-0 before:ml-[1.125rem] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
           {schedule.map((block, i) => (
             <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
               <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-indigo-100 text-indigo-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
@@ -79,6 +104,7 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
             </div>
           ))}
         </div>
+        </>
       ) : (
         <div className="text-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
           <p className="text-gray-500 text-sm mb-2">Let AI figure out when you should do what.</p>

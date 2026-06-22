@@ -8,14 +8,15 @@ interface ActionModalProps {
   title: string;
   content: string;
   isLoading: boolean;
+  onSaveDraft?: () => void;
 }
 
-export function ActionModal({ isOpen, onClose, title, content, isLoading }: ActionModalProps) {
+export function ActionModal({ isOpen, onClose, title, content, isLoading, onSaveDraft }: ActionModalProps) {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm shadow-2xl">
-      <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-3xl shadow-xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-3xl shadow-xl flex flex-col overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <h2 className="text-xl font-semibold text-gray-900">Action: {title}</h2>
           <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100">
@@ -40,13 +41,21 @@ export function ActionModal({ isOpen, onClose, title, content, isLoading }: Acti
           )}
         </div>
         
-        <div className="p-4 border-t border-gray-100 mt-auto bg-gray-50">
+        <div className="p-4 border-t border-gray-100 mt-auto bg-gray-50 flex gap-3">
           <button 
             onClick={onClose}
-            className="w-full py-2.5 px-4 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-800 transition-colors"
+            className="flex-1 py-2.5 px-4 bg-white border border-gray-200 text-gray-900 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
           >
             Close
           </button>
+          {!isLoading && content && onSaveDraft && (
+            <button 
+              onClick={onSaveDraft}
+              className="flex-1 py-2.5 px-4 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
+            >
+              Save draft to task
+            </button>
+          )}
         </div>
       </div>
     </div>
