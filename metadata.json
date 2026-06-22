@@ -1,0 +1,6 @@
+{
+  "name": "Vibecoding Hackathon Template",
+  "description": "A sleek, dark-themed base workspace for a vibecoding hackathon.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
