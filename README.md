@@ -12,10 +12,12 @@ When everything is overdue and urgent, traditional task lists cause paralysis. T
 ## Key Features
 - **Multimodal Brain Dump**: Type, talk, or capture an image (like a receipt or whiteboard). Tempo parses it into structured tasks with ISO deadlines and subtasks via `gemini-2.5-flash`.
 - **Proactive Execution & Draft Saves**: Let Tempo draft that dreaded email, outline that report, or list those steps right onto the task card. Save drafts back onto the task to instantly revisit them.
-- **Background Auto-Escalation & Notifications**: As deadlines approach, Tempo automatically raises urgency, pushes an in-browser notification, and highlights "Needs Attention Now".
+- **Background Auto-Escalation & Notifications**: As deadlines approach, Tempo automatically raises urgency, pushes an in-browser notification, and highlights "Needs Attention Now". Tasks can be snoozed or dismissed.
+- **Resurface Lingering Work**: Tasks without deadlines that sit untouched for days are gently resurfaced in a dedicated "Lingering" section, preventing them from falling through the cracks forever.
 - **Dynamic Eisenhower Matrix**: View your workload prioritized logically into Do First, Schedule, Quick Wins, and Eliminate based on smart urgency algorithms.
-- **Algorithmic Daily Planner**: Let Tempo automatically build a realistic chronological schedule for the day out of your active tasks.
-- **Smart Focus Mode**: Select a task, hit Focus, and work through its subtasks with an automated Pomodoro timer that defaults to your next unchecked subtask's expected time overhead.
+- **Algorithmic Daily Planner**: Let Tempo automatically build a realistic chronological schedule for the day out of your active tasks, persisting safely across reloads.
+- **Sustainable Focus Mode**: Select a task, hit Focus, and work through its subtasks with an automated timer. Completing a sprint notifies you to take a structured break and increments your daily stats.
+- **Insights Dashboard**: A compact view of your momentum—see complete rates, active habits, completed sprints, and tasks done today.
 
 ## Powered by Google
 - **Gemini Flash (`gemini-2.5-flash`)** processing text and multi-part image base64 payloads behind a secured Express server, utilizing Structured JSON Schema outputs (`@google/genai`).

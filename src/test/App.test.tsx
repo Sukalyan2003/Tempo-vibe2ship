@@ -19,7 +19,7 @@ Object.defineProperty(window, 'Notification', { value: { permission: 'default', 
 describe('App Integration', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    vi.spyOn(ToastContext, 'useToast').mockReturnValue({ addToast: vi.fn(), removeToast: vi.fn(), toasts: [] });
+    vi.spyOn(ToastContext, 'useToast').mockReturnValue({ addToast: vi.fn(), toasts: [] } as any);
   });
 
   afterEach(() => {

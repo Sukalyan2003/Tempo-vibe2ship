@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../types';
-import { Play, Pause, X, CheckCircle } from 'lucide-react';
+import { Play, Pause, X, CheckCircle, Coffee } from 'lucide-react';
+import { useToast } from './ToastContext';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface FocusModeProps {
   task: Task | null;
@@ -10,10 +12,13 @@ interface FocusModeProps {
 }
 
 export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: FocusModeProps) {
+  const { addToast } = useToast();
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [activeSubtaskIdx, setActiveSubtaskIdx] = useState<number>(0);
+  const [sprintComplete, setSprintComplete] = useState(false);
+  const [sprintCount, setSprintCount] = useLocalStorage('tempo_sprints', 0);
 
   const firstIncompleteIdx = task?.subtasks.findIndex(s => typeof s === 'string' ? true : !s.completed) ?? 0;
   const targetIdx = firstIncompleteIdx !== -1 ? firstIncompleteIdx : 0;
@@ -21,12 +26,15 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
   const subtaskTitle = currentSubtask ? (typeof currentSubtask === 'string' ? currentSubtask : currentSubtask.title) : null;
 
   useEffect(() => {
-    if (task && (task.id !== activeTaskId || targetIdx !== activeSubtaskIdx)) {
+    if (task && task.id !== activeTaskId) {
       setActiveTaskId(task.id);
       setActiveSubtaskIdx(targetIdx);
       const mins = (typeof currentSubtask === 'object' && currentSubtask.estimatedMinutes) ? currentSubtask.estimatedMinutes : 25;
       setTimeLeft(mins * 60);
       setIsActive(false);
+      setSprintComplete(false);
+    } else if (task && targetIdx !== activeSubtaskIdx) {
+      setActiveSubtaskIdx(targetIdx);
     }
   }, [task, activeTaskId, activeSubtaskIdx, targetIdx, currentSubtask]);
 
@@ -34,13 +42,19 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
     let interval: NodeJS.Timeout | null = null;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (timeLeft === 0) {
+    } else if (isActive && timeLeft === 0) {
       setIsActive(false);
+      setSprintComplete(true);
+      setSprintCount(sprintCount + 1);
+      addToast('Sprint complete! Time for a short break.', 'success');
+      if (Notification.permission === 'granted') {
+        new Notification('Sprint Complete', { body: 'Time for a short break (eyes/stretch/water)!' });
+      }
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isActive, timeLeft]);
+  }, [isActive, timeLeft, sprintCount, setSprintCount, addToast]);
 
   if (!task) return null;
 
@@ -55,11 +69,11 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-gray-900/95 backdrop-blur-md">
-      <button onClick={onClose} className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors">
+      <button onClick={onClose} className="absolute top-4 right-4 md:top-8 md:right-8 text-white/50 hover:text-white transition-colors z-10">
         <X className="w-8 h-8" />
       </button>
 
-      <div className="max-w-xl w-full text-center space-y-8">
+      <div className="max-w-xl w-full text-center space-y-6 md:space-y-8 overflow-y-auto max-h-screen py-16 px-2 scrollbar-hide">
         <div>
           <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-sm font-medium mb-4 uppercase tracking-widest">
             Focus Mode
@@ -74,6 +88,12 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
           <div className="text-7xl md:text-[8rem] font-mono font-bold text-white tracking-tight tabular-nums">
             {minutes}:{seconds}
           </div>
+          {sprintComplete && (
+            <div className="mt-6 flex items-center justify-center gap-2 text-green-400 font-medium animate-pulse">
+              <Coffee className="w-5 h-5" />
+              <span>Sprint complete. Take a short 5m break (eyes / stretch / water).</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-center gap-4">
@@ -106,7 +126,7 @@ export function FocusMode({ task, onClose, onCompleteTask, onUpdateSubtask }: Fo
                   <label key={i} className="flex items-start gap-3 text-white/90 group cursor-pointer">
                     <input 
                       type="checkbox" 
-                      className="mt-1 w-5 h-5 rounded border-white/20 bg-white/10 text-indigo-500 focus:ring-offset-gray-900 transition-all cursor-pointer" 
+                      className="mt-1 w-5 h-5 rounded border-white/20 bg-white/10 text-indigo-500 focus:ring-offset-gray-900 transition-all cursor-pointer shrink-0" 
                       checked={!!completed}
                       onChange={(e) => onUpdateSubtask(task.id, i, e.target.checked)}
                     />

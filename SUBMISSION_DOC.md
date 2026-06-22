@@ -18,34 +18,38 @@ Tempo directly addresses the "Agentic Depth" requirement (20% evaluation weight)
 - **How it works:** Users can speak, type their rambling thoughts, or upload an image (e.g., a photo of a syllabus or a receipt). 
 - **The Agent:** A backend Express endpoint uses `@google/genai` (handling both text and base64 images) with **Structured JSON Outputs** to extract task titles, assign explicit priorities (Low/Medium/High), compute a smart Urgency Score out of 10, and identify ISO 8601 deadlines.
 
-### B. Auto-Escalation & True Proactivity
+### B. Auto-Escalation, "Snooze," & True Proactivity
 - **How it works:** Time is constantly monitored.
-- **The Agent:** As deadlines approach, Tempo automatically escalates task urgency in the background, triggers a "Needs Attention Now" banner, and dispatches native browser notifications for tasks that become at-risk or overdue—preventing last-minute disasters without spamming the user.
+- **The Agent:** As deadlines approach, Tempo automatically escalates task urgency in the background, triggers a "Needs Attention Now" banner, and dispatches native browser notifications for tasks that become at-risk or overdue—preventing last-minute disasters without spamming the user. Users can proactively "Snooze" (e.g. 1 hour) or "Dismiss" these escalations.
 
-### C. Auto-Breakdown of Complex Assignments
+### C. Resurfacing Lingering Work
+- **How it works:** Untouched, undated work normally dies on traditional to-do lists.
+- **The Agent:** Tempo automatically tags metadata (`createdAt`, `lastTouched`) and gently surfaces stale items in a dedicated "Lingering" section, asking an empathetic question ("This has been sitting a while — still relevant?").
+
+### D. Auto-Breakdown of Complex Assignments
 - **How it works:** Overwhelming tasks often cause procrastination. 
 - **The Agent:** During the parsing phase, Gemini automatically generates actionable, bite-sized subtasks with estimated time completions. Users can recursively "break down further" if a subtask is still too large.
 
-### D. Proactive Execution Engine & Draft Persistence
+### E. Proactive Execution Engine & Draft Persistence
 - **How it works:** A "Proactive Execute" button lives on every task. 
 - **The Agent:** Clicking it triggers an autonomous workflow where Gemini immediately begins working on the task (e.g., drafting an email or outlining a report). 
 - **Persistence:** Generated drafts can be seamlessly saved back onto the task card and reopened instantly without re-prompting the model, closing the gap from "suggestion" to "action".
 
-### E. Algorithmic Daily Planner
+### F. Algorithmic Daily Planner
 - **How it works:** A dedicated "Auto-plan day" capability.
-- **The Agent:** Tempo takes the user's active tasks, feeds them to Gemini as context, and generates a logical chronological timeline for the day (e.g., "09:00 AM - 10:30 AM"). It provides realistic time constraints and a sentence of specialized advice on tackling the block efficiently.
+- **The Agent:** Tempo takes the user's active tasks, feeds them to Gemini as context, and generates a logical chronological timeline for the day (e.g., "09:00 AM - 10:30 AM"). It provides realistic time constraints and a sentence of specialized advice on tackling the block efficiently. The schedule is saved to local storage to survive browser reloads.
 
-### F. Dynamic Eisenhower Matrix & Workload Management
+### G. Dynamic Eisenhower Matrix & Workload Management
 - **How it works:** A secondary layout option categorizes tasks into Do First, Schedule, Quick Wins, and Eliminate.
 - **The Agent:** Tasks are routed into these quadrants based on a combination of their algorithmic Urgency Score and explicitly assigned Priority properties.
 
-### G. Smart Focus Mode (Zero Distraction)
+### H. Smart Focus Mode & Sustainable Sprints
 - **How it works:** A full-screen immersive timer that strips away the rest of the application UI. 
-- **The Agent:** The timer automatically sets its duration not to a generic 25 minutes, but logically to the estimated completion time of the specific subtask you are focusing on. It features a large countdown, a checklist of subtasks, and a one-click completion trigger to keep the user deeply locked into singular execution.
+- **The Agent:** The timer automatically sets its duration not to a generic 25 minutes, but logically to the estimated completion time of the specific subtask you are focusing on. Checking off a subtask rolls to the next silently. Completing a sprint suggests a healthy break, increments a daily sprint counter, and fires a native desktop notification to encourage sustainable velocity.
 
 ## 3. Product Experience & Design
 - **Mental Load Reduction:** The UI groups tasks intelligently by Urgency Score and Priority, automatically promoting critical imminent tasks (Urgency >= 7) to the top of the queue with clear visual distinction (Red vs Indigo badges).
-- **Gamification & Habits:** Features a durable Habit Tracker with "streaks", along with a visual Productivity Score that promotes achieving "Inbox Zero."
+- **Gamification & Insights:** Features a durable Habit Tracker with "streaks", along with a compact Insights Dashboard detailing completed tasks, sprint counts, active habits, and a visual Productivity Score that promotes achieving "Inbox Zero."
 - **Data Persistence:** Utilizing custom React Hooks, the entire application leverages `localStorage` to completely persist the user's tasks, schedule state, and habits securely inside their client browser session without requiring database setup.
 
 ## 4. Technical Implementation & Architecture

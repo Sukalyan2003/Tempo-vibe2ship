@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FocusMode } from '../components/FocusMode';
 import { Task } from '../types';
+import * as ToastContext from '../components/ToastContext';
 
 const mockTask: Task = {
   id: 't1',
@@ -14,7 +15,11 @@ const mockTask: Task = {
 describe('FocusMode', () => {
   it('toggles subtask completion', () => {
     const onUpdateSubtask = vi.fn();
-    render(<FocusMode task={mockTask} onClose={vi.fn()} onCompleteTask={vi.fn()} onUpdateSubtask={onUpdateSubtask} />);
+    render(
+      <ToastContext.ToastProvider>
+        <FocusMode task={mockTask} onClose={vi.fn()} onCompleteTask={vi.fn()} onUpdateSubtask={onUpdateSubtask} />
+      </ToastContext.ToastProvider>
+    );
     
     const checkbox = screen.getByRole('checkbox');
     fireEvent.click(checkbox);

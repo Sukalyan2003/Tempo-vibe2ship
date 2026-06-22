@@ -83,20 +83,21 @@ export function HabitTracker() {
         })}
       </div>
 
-      <form onSubmit={handleAddHabit} className="flex gap-2">
+      <form onSubmit={handleAddHabit} className="flex flex-col sm:flex-row gap-2">
         <input 
           type="text" 
           placeholder="New habit..." 
           value={newTitle}
           onChange={e => setNewTitle(e.target.value)}
-          className="flex-1 rounded-xl border-gray-200 border px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all bg-gray-50 text-gray-900"
+          className="flex-1 rounded-xl border-gray-200 border px-3 py-3 sm:py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all bg-gray-50 text-gray-900"
         />
         <button 
           type="submit"
           disabled={!newTitle.trim()}
-          className="bg-orange-500 text-white p-2 rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
+          className="bg-orange-500 text-white p-3 sm:p-2 rounded-xl flex items-center justify-center hover:bg-orange-600 disabled:opacity-50 transition-colors"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-5 h-5 md:w-5 md:h-5" />
+          <span className="sm:hidden font-medium ml-2">Add Habit</span>
         </button>
       </form>
     </div>

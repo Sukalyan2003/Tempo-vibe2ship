@@ -6,7 +6,7 @@ import { ActionModal } from './components/ActionModal';
 import { HabitTracker } from './components/HabitTracker';
 import { DailyPlanner } from './components/DailyPlanner';
 import { FocusMode } from './components/FocusMode';
-import { Target, CheckCircle2, BarChart3, AlertTriangle, LayoutGrid, List } from 'lucide-react';
+import { Target, CheckCircle2, BarChart3, AlertTriangle, LayoutGrid, List, Clock, X } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useToast } from './components/ToastContext';
 
@@ -24,6 +24,9 @@ export default function App() {
     isLoading: false,
   });
   const [escalationReasons, setEscalationReasons] = useLocalStorage<Record<string, string>>('tempo_escalations', {});
+  const [sprintCount] = useLocalStorage('tempo_sprints', 0);
+  const [habits] = useLocalStorage<any[]>('tempo_habits', []);
+  const activeHabitsCount = habits.filter(h => h.streak > 0).length;
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -81,10 +84,35 @@ export default function App() {
   }, [tasks, setTasks, escalationReasons, setEscalationReasons]);
 
   const atRiskTasks = tasks.filter(t => {
+    if (t.dismissed) return false;
+    if (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > new Date().getTime()) return false;
     if (!t.dueDate) return false;
     const hoursLeft = (new Date(t.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60);
     return hoursLeft <= 24;
   }).sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
+
+  const lingeringTasks = tasks.filter(t => {
+    if (t.dismissed) return false;
+    if (t.dueDate) return false;
+    if (t.urgency >= 7 || t.priority === 'High') return false;
+    if (!t.lastTouched) return false;
+    // For test capability we might need a shorter span if needed, but 7 days is good
+    const daysSinceTouch = (new Date().getTime() - new Date(t.lastTouched).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceTouch >= 7;
+  }).sort((a, b) => new Date(a.lastTouched!).getTime() - new Date(b.lastTouched!).getTime()).slice(0, 3);
+
+  const handleSnooze = (taskId: string, hours: number) => {
+    const until = new Date(new Date().getTime() + hours * 60 * 60 * 1000).toISOString();
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, snoozedUntil: until } : t));
+  };
+
+  const handleDismiss = (taskId: string) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, dismissed: true } : t));
+  };
+
+  const handleTouch = (taskId: string) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, lastTouched: new Date().toISOString() } : t));
+  };
 
   const handleBrainDumpSubmit = async (text: string) => {
     try {
@@ -95,7 +123,7 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.result) {
-        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID() }))]);
+        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID(), createdAt: new Date().toISOString(), lastTouched: new Date().toISOString() }))]);
       } else {
         throw new Error(data.error || 'Failed to parse tasks');
       }
@@ -122,7 +150,7 @@ export default function App() {
       });
       const data = await response.json();
       if (response.ok && data.result) {
-        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID() }))]);
+        setTasks((prev) => [...prev, ...data.result.map((t: any) => ({ ...t, id: crypto.randomUUID(), createdAt: new Date().toISOString(), lastTouched: new Date().toISOString() }))]);
         addToast('Tasks extracted from image', 'success');
       } else {
         throw new Error(data.error || 'Failed to parse image');
@@ -173,7 +201,7 @@ export default function App() {
   };
 
   const handleUpdateTask = (updatedTask: Task) => {
-    setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+    setTasks(prev => prev.map(t => t.id === updatedTask.id ? { ...updatedTask, lastTouched: new Date().toISOString() } : t));
   };
 
   const handleUpdateSubtask = (taskId: string, subtaskIdx: number, completed: boolean) => {
@@ -182,13 +210,13 @@ export default function App() {
       const newSubtasks = [...t.subtasks];
       const sub = newSubtasks[subtaskIdx];
       newSubtasks[subtaskIdx] = typeof sub === 'string' ? { title: sub, completed } : { ...sub, completed };
-      return { ...t, subtasks: newSubtasks };
+      return { ...t, subtasks: newSubtasks, lastTouched: new Date().toISOString() };
     }));
   };
 
   const handleSaveDraft = () => {
     if (actionModal.taskId && actionModal.content) {
-      setTasks(prev => prev.map(t => t.id === actionModal.taskId ? { ...t, draft: actionModal.content } : t));
+      setTasks(prev => prev.map(t => t.id === actionModal.taskId ? { ...t, draft: actionModal.content, lastTouched: new Date().toISOString() } : t));
       addToast('Draft saved to task', 'success');
       setActionModal(prev => ({ ...prev, isOpen: false }));
     }
@@ -202,6 +230,8 @@ export default function App() {
         title: 'Finalize Hackathon Submission',
         priority: 'High',
         urgency: 10,
+        createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+        lastTouched: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
         dueDate: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours from now
         subtasks: [
           { title: 'Record video demo', estimatedMinutes: 30, completed: false },
@@ -214,6 +244,8 @@ export default function App() {
         title: 'Call the DMV',
         priority: 'Medium',
         urgency: 5,
+        createdAt: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+        lastTouched: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
         dueDate: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString(), // 2 days from now
         subtasks: [
           { title: 'Find vehicle registration', estimatedMinutes: 5, completed: false },
@@ -225,6 +257,8 @@ export default function App() {
         title: 'Cancel gym membership',
         priority: 'Medium',
         urgency: 8,
+        createdAt: new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString(),
+        lastTouched: new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString(),
         dueDate: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago (Overdue)
         subtasks: [
           { title: 'Find contract terms', estimatedMinutes: 10, completed: false },
@@ -236,6 +270,8 @@ export default function App() {
         title: 'Organize desk drawer',
         priority: 'Low',
         urgency: 2,
+        createdAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago (Lingering)
+        lastTouched: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(),
         subtasks: [
           { title: 'Empty out all items', estimatedMinutes: 5, completed: false },
           { title: 'Sort into keep/throw', estimatedMinutes: 15, completed: false }
@@ -273,7 +309,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 grid grid-cols-1 md:grid-cols-[1fr_300px] gap-8">
+      <main className="max-w-4xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
         <div className="space-y-12">
           <section>
             <BrainDump onSubmit={handleBrainDumpSubmit} onImageSubmit={handleImageSubmit} />
@@ -299,15 +335,35 @@ export default function App() {
                           {escalationReasons[t.id] || "Due soon"}
                         </div>
                       </div>
-                      <button
-                         onClick={() => setFocusTaskId(t.id)}
-                         className="px-4 py-2 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition flex items-center justify-center shrink-0 shadow-sm"
-                      >
-                        Focus Now
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setFocusTaskId(t.id)} className="px-4 py-2 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition flex items-center justify-center shrink-0 shadow-sm text-sm">Focus</button>
+                        <button onClick={() => handleSnooze(t.id, 1)} className="px-3 py-2 bg-red-50 text-red-700 font-medium rounded-xl hover:bg-red-100 transition border border-red-200 text-sm">Snooze 1h</button>
+                        <button onClick={() => handleDismiss(t.id)} className="px-3 py-2 text-gray-400 hover:text-gray-600 transition" title="Dismiss"><X className="w-5 h-5" /></button>
+                      </div>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {lingeringTasks.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Clock className="w-6 h-6 text-amber-600" />
+                <h2 className="text-xl font-bold tracking-tight text-amber-900">Lingering</h2>
+              </div>
+              <p className="text-amber-800 text-sm mb-4">This has been sitting a while — still relevant?</p>
+              <div className="space-y-3">
+                {lingeringTasks.map(t => (
+                  <div key={t.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white rounded-2xl p-4 border border-amber-100 shadow-sm gap-4">
+                    <div className="font-semibold text-gray-900">{t.title}</div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { handleTouch(t.id); setFocusTaskId(t.id); }} className="px-4 py-2 bg-amber-100 text-amber-800 font-medium rounded-xl hover:bg-amber-200 transition text-sm">Review Now</button>
+                      <button onClick={() => handleDismiss(t.id)} className="px-3 py-2 text-gray-400 hover:text-gray-600 transition" title="Dismiss"><X className="w-5 h-5" /></button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -324,7 +380,7 @@ export default function App() {
           {tasks.length > 0 ? (
             <div className="space-y-12">
               {isMatrixView ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <section className="bg-red-50/30 p-4 rounded-3xl border border-red-100">
                     <h3 className="font-bold text-red-900 mb-4">Do First (Urgent & Important)</h3>
                     <div className="space-y-3">
@@ -362,7 +418,7 @@ export default function App() {
                           <div className="w-2 rounded-full h-6 bg-red-500 mr-2"></div>
                           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Urgent & High Priority</h2>
                        </div>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-4">
                           {urgentTasks.map(task => (
                             <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
                           ))}
@@ -376,7 +432,7 @@ export default function App() {
                           <div className="w-2 rounded-full h-6 bg-indigo-500 mr-2"></div>
                           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Up Next</h2>
                        </div>
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 gap-4">
                           {normalTasks.map(task => (
                             <TaskCard key={task.id} task={task} onExecute={handleExecute} onComplete={handleComplete} onFocus={t => setFocusTaskId(t.id)} onUpdate={handleUpdateTask} />
                           ))}
@@ -405,29 +461,30 @@ export default function App() {
         
         <aside>
           <div className="sticky top-8 space-y-8">
-            <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-gray-500 mb-1">Today's Completion</div>
-                <div className="text-3xl font-bold text-gray-900">{productivityScore}%</div>
+            <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm flex flex-col gap-5">
+              <div className="flex items-center gap-2 mb-2">
+                <BarChart3 className="w-5 h-5 text-indigo-600" />
+                <h2 className="font-bold text-gray-900 tracking-tight">Insights</h2>
               </div>
-              <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
-                <BarChart3 className="w-6 h-6" />
-              </div>
-            </div>
-
-            {todayCompleted.length > 0 && (
-              <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm">
-                <h3 className="font-bold text-gray-900 mb-3">Done Today</h3>
-                <div className="space-y-2">
-                  {todayCompleted.map(t => (
-                    <div key={t.id} className="flex gap-2 items-center text-sm text-gray-500 line-through">
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
-                      {t.title}
-                    </div>
-                  ))}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Done Today</div>
+                  <div className="text-2xl font-bold text-gray-900">{todayCompleted.length}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Focus Sprints</div>
+                  <div className="text-2xl font-bold text-gray-900">{sprintCount}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Active Streaks</div>
+                  <div className="text-2xl font-bold text-gray-900">{activeHabitsCount}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Completed Rate</div>
+                  <div className="text-2xl font-bold text-gray-900">{productivityScore}%</div>
                 </div>
               </div>
-            )}
+            </div>
 
             <HabitTracker />
             <DailyPlanner tasks={tasks} />

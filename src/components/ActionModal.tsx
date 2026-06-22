@@ -17,14 +17,14 @@ export function ActionModal({ isOpen, onClose, title, content, isLoading, onSave
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm shadow-2xl">
       <div className="bg-white w-full max-w-2xl max-h-[80vh] rounded-3xl shadow-xl flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-900">Action: {title}</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100">
+        <div className="flex items-center justify-between p-5 md:p-6 border-b border-gray-100">
+          <h2 className="text-xl font-semibold text-gray-900 truncate pr-4">Action: {title}</h2>
+          <button onClick={onClose} className="p-2 shrink-0 text-gray-400 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100">
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-8 overflow-y-auto flex-1 min-h-[300px]">
+        <div className="p-5 md:p-8 overflow-y-auto flex-1 min-h-[300px]">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500 h-full">
               <div className="w-8 h-8 border-4 border-gray-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>

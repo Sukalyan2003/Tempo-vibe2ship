@@ -14,6 +14,10 @@ export interface Task {
   urgency: number;
   draft?: string;
   subtasks: (string | Subtask)[];
+  snoozedUntil?: string;
+  dismissed?: boolean;
+  createdAt?: string;
+  lastTouched?: string;
 }
 
 export interface Habit {

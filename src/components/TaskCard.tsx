@@ -49,9 +49,9 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
   
   return (
     <div className={`p-5 rounded-2xl border ${isHighPriority ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200 bg-white'} shadow-sm transition-all hover:shadow-md flex flex-col gap-4`}>
-      <div className="flex justify-between items-start gap-4">
-        <div>
-          <h3 className="font-semibold text-gray-900 text-lg leading-tight">{task.title}</h3>
+      <div className="flex justify-between items-start gap-4 w-full">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-900 text-lg leading-tight break-words">{task.title}</h3>
           <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                 task.priority === 'High' ? 'bg-red-100 text-red-700' :
@@ -91,14 +91,14 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
               return (
                 <li key={idx} className="text-sm text-gray-700 flex flex-col gap-1 items-start group">
                   <div className="flex items-start gap-2 w-full">
-                    <span className="text-gray-400 text-xs mt-0.5">•</span>
-                    <span className="flex-1">{title}</span>
-                    {mins && <span className="text-xs text-gray-400 whitespace-nowrap bg-gray-100 px-1.5 py-0.5 rounded">{mins}m</span>}
+                    <span className="text-gray-400 text-xs mt-0.5 shrink-0">•</span>
+                    <span className="flex-1 leading-snug">{title}</span>
+                    {mins && <span className="text-xs text-gray-400 whitespace-nowrap bg-gray-100 px-1.5 py-0.5 rounded mt-0.5 shrink-0">{mins}m</span>}
                   </div>
                   <button 
                     onClick={() => handleBreakdown(sub)}
                     disabled={isBreakingDown !== null}
-                    className="text-xs text-indigo-500 hover:text-indigo-700 font-medium ml-4 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                    className="text-xs text-indigo-500 hover:text-indigo-700 font-medium ml-4 md:opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
                   >
                     {isBreakingDown === title ? 'Breaking down...' : 'Break down further'}
                   </button>
@@ -109,17 +109,17 @@ export function TaskCard({ task, onExecute, onComplete, onFocus, onUpdate }: Tas
         </div>
       )}
 
-      <div className="mt-auto pt-2 flex gap-2">
+      <div className="mt-auto pt-2 flex flex-wrap gap-2">
         <button
           onClick={() => onExecute(task)}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-colors ${task.draft ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
+          className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-sm font-medium transition-colors ${task.draft ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
         >
-          {task.draft ? <FileText className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-          {task.draft ? 'View Draft' : 'Proactive Execute'}
+          {task.draft ? <FileText className="w-4 h-4 fill-current shrink-0" /> : <Play className="w-4 h-4 fill-current shrink-0" />}
+          <span className="truncate">{task.draft ? 'View Draft' : 'Proactive Execute'}</span>
         </button>
         <button
           onClick={() => onFocus && onFocus(task)}
-          className="flex items-center justify-center py-2.5 px-4 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-medium hover:bg-indigo-100 border border-indigo-100 transition-colors"
+          className="flex-1 min-w-[80px] sm:flex-none flex items-center justify-center py-2.5 px-4 bg-indigo-50 text-indigo-700 rounded-xl text-sm font-medium hover:bg-indigo-100 border border-indigo-100 transition-colors"
           title="Enter Focus Mode"
         >
           Focus

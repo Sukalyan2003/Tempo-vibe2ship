@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Task } from '../types';
 import { Clock, CalendarDays, Loader2, Sparkles } from 'lucide-react';
 import { useToast } from './ToastContext';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface ScheduledBlock {
   timeFrame: string;
@@ -16,8 +17,8 @@ interface DailyPlannerProps {
 
 export function DailyPlanner({ tasks }: DailyPlannerProps) {
   const { addToast } = useToast();
-  const [schedule, setSchedule] = useState<ScheduledBlock[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [schedule, setSchedule] = useLocalStorage<ScheduledBlock[]>('tempo_schedule', []);
+  const [isGenerating, setIsGenerating] = React.useState(false);
 
   const generateSchedule = async () => {
     if (tasks.length === 0) return;
@@ -46,9 +47,9 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
 
   return (
     <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm mt-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
+          <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
             <CalendarDays className="w-5 h-5" />
           </div>
           <h2 className="text-xl font-bold tracking-tight text-gray-900">AI Daily Planner</h2>
@@ -57,7 +58,7 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
         <button
           onClick={generateSchedule}
           disabled={isGenerating || tasks.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 w-full sm:w-auto justify-center"
         >
           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           {schedule.length > 0 ? "Regenerate" : "Auto-plan day"}
@@ -88,13 +89,13 @@ export function DailyPlanner({ tasks }: DailyPlannerProps) {
             }
             return null;
           })()}
-          <div className="space-y-4 relative before:absolute before:inset-0 before:ml-[1.125rem] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+          <div className="space-y-4 relative before:absolute before:inset-0 before:ml-[1.125rem] before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
           {schedule.map((block, i) => (
-            <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-indigo-100 text-indigo-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
+            <div key={i} className="relative flex items-start gap-4 group">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-indigo-100 text-indigo-600 shadow shrink-0 z-10">
                 <Clock className="w-4 h-4" />
               </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-2xl border border-gray-100 shadow-sm group-hover:border-indigo-200 transition-colors">
+              <div className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm group-hover:border-indigo-200 transition-colors mt-1">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{block.timeFrame}</span>
                 </div>

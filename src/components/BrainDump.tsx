@@ -112,7 +112,7 @@ export function BrainDump({ onSubmit, onImageSubmit }: BrainDumpProps) {
         <textarea
           id="braindump"
           rows={4}
-          className="w-full rounded-2xl border-gray-200 border p-4 bg-gray-50 text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all resize-none"
+          className="w-full rounded-2xl border-gray-200 border p-4 pb-16 bg-gray-50 text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all resize-none"
           placeholder="E.g., I need to pay the electricity bill by Friday, finish the biology report for Monday morning, and remember to buy groceries tonight..."
           value={text}
           onChange={(e) => setText(e.target.value)}
