@@ -9,6 +9,7 @@ import { FocusMode } from './components/FocusMode';
 import { Target, CheckCircle2, BarChart3, AlertTriangle, LayoutGrid, List, Clock, X } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useToast } from './components/ToastContext';
+import { applyAgentActions } from './agentReducer';
 
 import { AgentChat } from './components/AgentChat';
 import { DailyBrief } from './components/DailyBrief';
@@ -136,72 +137,39 @@ export default function App() {
   };
 
   const handleAgentActions = async (actions: any[]) => {
-    let tasksChanged = false;
-    let nextTasks = [...tasks];
+    const { newTasks, completedTaskIds } = applyAgentActions(tasks, actions);
     
-    for (const action of actions) {
-      const { name, args } = action;
-      if (name === 'createTask') {
-         nextTasks.push({
-            id: crypto.randomUUID(),
-            title: args.title,
-            priority: args.priority || 'Medium',
-            urgency: 5,
-            dueDate: args.dueDate || undefined,
-            subtasks: [],
-            createdAt: new Date().toISOString(),
-            lastTouched: new Date().toISOString()
-         });
-         tasksChanged = true;
-         addAgentLog(`Created task: ${args.title}`);
-      } else if (name === 'rescheduleTask') {
-         nextTasks = nextTasks.map(t => t.id === args.taskId ? { ...t, dueDate: args.newDueDate, lastTouched: new Date().toISOString() } : t);
-         tasksChanged = true;
-         addAgentLog(`Rescheduled task ${args.taskId.slice(0,4)}... to ${args.newDueDate}`);
-      } else if (name === 'completeTask') {
-         const taskToComplete = nextTasks.find(t => t.id === args.taskId);
-         if (taskToComplete) {
-            setCompletedTasks(prev => {
-              const next = [...prev, { ...taskToComplete, completedAt: new Date().toISOString().split('T')[0] }];
-              if (next.length > 50) return next.slice(next.length - 50);
-              return next;
-            });
-            nextTasks = nextTasks.filter(t => t.id !== args.taskId);
-            tasksChanged = true;
-            addAgentLog(`Completed task: ${taskToComplete.title}`);
-         }
-      } else if (name === 'breakdownTask') {
-         const tIdx = nextTasks.findIndex(t => t.id === args.taskId);
-         if (tIdx !== -1) {
-             const t = nextTasks[tIdx];
-             try {
-                const res = await fetch('/api/gemini/breakdown', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ taskTitle: t.title, subtaskTitle: 'Main Task Breakdown' })
-                });
-                const data = await res.json();
-                if (res.ok && data.result) {
-                   nextTasks[tIdx] = { 
-                     ...t, 
-                     subtasks: [...(t.subtasks || []), ...data.result],
-                     lastTouched: new Date().toISOString()
-                   };
-                   tasksChanged = true;
-                   addAgentLog(`Generated subtasks for: ${t.title}`);
-                }
-             } catch(e) {
-                console.error('Agent breakdown error', e);
-             }
-         }
-      } else if (name === 'planDay') {
-         addAgentLog('Planned day automatically');
-      }
+    let finalTasks = [...newTasks];
+    const newlyCompleted = finalTasks.filter(t => completedTaskIds.includes(t.id));
+    
+    if (newlyCompleted.length > 0) {
+      setCompletedTasks(prev => {
+        const next = [...prev, ...newlyCompleted.map(t => ({ ...t, completedAt: new Date().toISOString().split('T')[0] }))];
+        if (next.length > 50) return next.slice(next.length - 50);
+        return next;
+      });
+      finalTasks = finalTasks.filter(t => !completedTaskIds.includes(t.id));
     }
     
-    if (tasksChanged) {
-       setTasks(nextTasks);
-       addToast('Agent actions applied', 'success');
+    setTasks(finalTasks);
+    
+    const counts = { created: 0, rescheduled: 0, setPriority: 0, completed: 0 };
+    actions.forEach(a => {
+      if (a.name === 'createTask') counts.created++;
+      else if (a.name === 'rescheduleTask') counts.rescheduled++;
+      else if (a.name === 'setPriority') counts.setPriority++;
+      else if (a.name === 'completeTask') counts.completed++;
+    });
+    
+    const msg = [];
+    if (counts.created) msg.push(`created ${counts.created}`);
+    if (counts.rescheduled) msg.push(`rescheduled ${counts.rescheduled}`);
+    if (counts.setPriority) msg.push(`prioritized ${counts.setPriority}`);
+    if (counts.completed) msg.push(`completed ${counts.completed}`);
+    
+    if (msg.length > 0) {
+      addToast(`Done: ${msg.join(', ')}`, 'success');
+      actions.forEach(a => addAgentLog(`Agent applied: ${a.name}`));
     }
   };
 

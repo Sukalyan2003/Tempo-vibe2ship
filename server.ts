@@ -332,7 +332,7 @@ async function startServer() {
       if (!process.env.GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY is not configured in the Secrets panel.");
       }
-      const { prompt, tasks } = req.body;
+      const { message, tasks } = req.body;
       const ai = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
@@ -340,12 +340,13 @@ async function startServer() {
       
       const response = await generateWithRetry(ai, {
         model: "gemini-2.5-flash",
-        contents: `Today is: ${new Date().toISOString()}.\nCurrent Tasks: ${JSON.stringify(tasks)}\n\nUser command: ${prompt}`,
+        contents: `Today is: ${new Date().toISOString()}.\nUser's current tasks: ${JSON.stringify(tasks)}.\nUser request: ${message}`,
         config: {
           systemInstruction: Object.values({ 
             TEMPO_SYSTEM, 
-            ext: "You are the conversational interface for Tempo. Execute user intent via tools. Always explain your planned action or answer the user directly if no tools are needed. Try to use answerQuestion to provide conversational info."
+            ext: "You translate the user's request into tool calls over THEIR existing tasks. Resolve task references by matching against the provided task list and return that task's exact id. If a request is genuinely ambiguous, call `answer` to ask one short clarifying question instead of guessing. Prefer the smallest set of actions that satisfies the request."
           }).join("\n\n"),
+          toolConfig: { functionCallingConfig: { mode: "ANY" } },
           tools: [{
             functionDeclarations: [
               {
@@ -356,9 +357,10 @@ async function startServer() {
                   properties: {
                     title: { type: Type.STRING },
                     priority: { type: Type.STRING, description: "High, Medium, Low" },
-                    dueDate: { type: Type.STRING, description: "ISO 8601 or null" }
+                    dueDate: { type: Type.STRING, description: "ISO 8601 date-time string of the inferred due date" },
+                    urgency: { type: Type.NUMBER }
                   },
-                  required: ["title", "priority"]
+                  required: ["title"]
                 }
               },
               {
@@ -374,14 +376,15 @@ async function startServer() {
                 }
               },
               {
-                name: "breakdownTask",
-                description: "Break a task down into subtasks.",
+                name: "setPriority",
+                description: "Set or change the priority of an existing task.",
                 parameters: {
                   type: Type.OBJECT,
                   properties: {
-                    taskId: { type: Type.STRING }
+                    taskId: { type: Type.STRING },
+                    priority: { type: Type.STRING, description: "High, Medium, or Low" }
                   },
-                  required: ["taskId"]
+                  required: ["taskId", "priority"]
                 }
               },
               {
@@ -400,14 +403,14 @@ async function startServer() {
                 description: "Plan the day automatically."
               },
               {
-                name: "answerQuestion",
-                description: "Answer a question about the user's workload, or reply conversationally.",
+                name: "answer",
+                description: "Answer a question about the user's workload, or ask for clarification.",
                 parameters: {
                   type: Type.OBJECT,
                   properties: {
-                    answer: { type: Type.STRING }
+                    message: { type: Type.STRING }
                   },
-                  required: ["answer"]
+                  required: ["message"]
                 }
               }
             ]
@@ -415,19 +418,15 @@ async function startServer() {
         }
       });
 
-      // functionCalls on the first candidate
       let functionCalls: any[] = [];
-      let text = "";
       if (response.candidates && response.candidates.length > 0) {
-        const parts = response.candidates[0].content.parts;
-        text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("\n");
+        const parts = response.candidates[0].content.parts || [];
         functionCalls = parts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall);
       } else {
-        text = response.text || "";
         functionCalls = response.functionCalls || [];
       }
       
-      res.json({ result: { functionCalls, text } });
+      res.json({ calls: functionCalls });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });

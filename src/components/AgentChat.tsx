@@ -27,32 +27,34 @@ export function AgentChat({ tasks, onExecuteAgentActions, onPlanDay }: AgentChat
       const res = await fetch('/api/gemini/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, tasks }),
+        body: JSON.stringify({ 
+          message: prompt, 
+          tasks: tasks.map(t => ({ id: t.id, title: t.title, priority: t.priority, dueDate: t.dueDate, urgency: t.urgency })) 
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
-      const { functionCalls, text } = data.result;
-      
-      let answerMsg = text;
+      const { calls } = data;
       
       // Handle the actions
-      const actions = functionCalls || [];
-      const mutativeActions = actions.filter((a: any) => a.name !== 'answerQuestion');
-      const answerAction = actions.find((a: any) => a.name === 'answerQuestion');
+      const actions = calls || [];
+      const mutativeActions = actions.filter((a: any) => ['createTask', 'rescheduleTask', 'setPriority', 'completeTask'].includes(a.name));
+      const answerAction = actions.find((a: any) => a.name === 'answer');
+      const planDayAction = actions.find((a: any) => a.name === 'planDay');
       
-      if (answerAction && answerAction.args?.answer) {
-        answerMsg = answerAction.args.answer;
+      if (answerAction && answerAction.args?.message) {
+        setAgentResponse(answerAction.args.message);
+      } else if (!mutativeActions.length && !planDayAction) {
+        setAgentResponse("I have processed your request.");
       }
       
-      setAgentResponse(answerMsg || "Here is what I found.");
+      if (planDayAction) {
+        onPlanDay();
+      }
       
-      if (mutativeActions.length > 1) {
+      if (mutativeActions.length > 0) {
         setPendingActions(mutativeActions);
-      } else if (mutativeActions.length === 1) {
-        // Single mutating action -> execute directly, or gate all mutations? The prompt says "mutates >1 task shows a proposed action list". So single mutation applies directly. 
-        executeActions(mutativeActions);
-        setPrompt('');
       } else {
         setPrompt('');
       }
@@ -66,12 +68,14 @@ export function AgentChat({ tasks, onExecuteAgentActions, onPlanDay }: AgentChat
   
   const executeActions = (actions: any[]) => {
     onExecuteAgentActions(actions);
-    const planDayAction = actions.find(a => a.name === 'planDay');
-    if (planDayAction) {
-      onPlanDay();
-    }
     setPendingActions([]);
     setPrompt('');
+  };
+
+  const removePendingAction = (index: number) => {
+    const newActions = [...pendingActions];
+    newActions.splice(index, 1);
+    setPendingActions(newActions);
   };
   
   return (
@@ -110,12 +114,25 @@ export function AgentChat({ tasks, onExecuteAgentActions, onPlanDay }: AgentChat
         <div className="mt-4 p-4 bg-amber-50 rounded-2xl border border-amber-200">
           <p className="text-sm text-amber-900 font-medium mb-3">Tempo proposes the following actions:</p>
           <ul className="space-y-2 mb-4">
-            {pendingActions.map((action, i) => (
-              <li key={i} className="text-sm text-amber-800 flex items-start gap-2 bg-white/50 p-2 rounded-lg">
-                <span className="font-mono text-xs font-bold text-amber-600 mt-0.5">{action.name}</span>
-                <span className="truncate">{JSON.stringify(action.args || {})}</span>
-              </li>
-            ))}
+            {pendingActions.map((action, i) => {
+              let text = "";
+              if (action.name === 'createTask') text = `Create: "${action.args.title}"`;
+              else if (action.name === 'rescheduleTask') text = `Reschedule to ${new Date(action.args.newDueDate).toLocaleString()}`;
+              else if (action.name === 'setPriority') text = `Set priority to ${action.args.priority}`;
+              else if (action.name === 'completeTask') text = `Mark task ${action.args.taskId.slice(0, 4)}... as done`;
+              
+              return (
+                <li key={i} className="text-sm text-amber-800 flex items-center justify-between bg-white/50 p-2 rounded-lg">
+                  <div className="flex items-center gap-2 overflow-hidden pr-2">
+                    <span className="font-mono text-xs font-bold text-amber-600 truncate shrink-0">{action.name}</span>
+                    <span className="truncate">{text || JSON.stringify(action.args || {})}</span>
+                  </div>
+                  <button onClick={() => removePendingAction(i)} className="p-1 hover:bg-amber-100 rounded-full text-amber-600 shrink-0">
+                    <X className="w-4 h-4" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
           <div className="flex items-center gap-2">
             <button
