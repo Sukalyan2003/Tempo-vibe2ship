@@ -28,7 +28,15 @@ GUARDRAILS
 let lastWorkingModel: string | null = null;
 
 async function generateWithRetry(ai: GoogleGenAI, params: any, retries = 2) {
-  let fallbackModels = [params.model || "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"];
+  // Ensure models are ordered from cheapest/fastest to most capable/expensive.
+  // The first model is the one passed in `params.model` (which defaults to gemini-2.5-flash everywhere),
+  // but if that fails, we want to try everything else. Wait, if params.model is gemini-2.5-flash, we
+  // will try that first. But the user said "prioritize everything from the cheapest to the best model".
+  // So I'll list them from cheapest to best. If params.model is set, it will be first.
+  let fallbackModels = [params.model || "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-3-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"];
+  
+  // Clean up any duplicates in case params.model is already in the list
+  fallbackModels = Array.from(new Set(fallbackModels));
   
   if (lastWorkingModel && fallbackModels.includes(lastWorkingModel)) {
     fallbackModels = [lastWorkingModel, ...fallbackModels.filter(m => m !== lastWorkingModel)];
@@ -52,20 +60,46 @@ async function generateWithRetry(ai: GoogleGenAI, params: any, retries = 2) {
           errMessage.includes("429") ||
           errMessage.includes("quota") || 
           errMessage.includes("rate limit");
+
+        const isDepletedCredits = errMessage.includes("prepayment credits are depleted");
           
         const isTransient = 
           errStatus === "UNAVAILABLE" || 
           errCode === 503 ||
-          errMessage.includes("503");
+          errMessage.includes("503") ||
+          errMessage.includes("fetch failed");
+
+        const isBadRequest =
+          errStatus === "INVALID_ARGUMENT" ||
+          errCode === 400 ||
+          errMessage.includes("400");
+
+        const isNotFound =
+          errStatus === "NOT_FOUND" ||
+          errCode === 404 ||
+          errMessage.includes("404");
+
+        if (isDepletedCredits) {
+           throw new Error("Your prepayment credits are depleted. Please check your billing at AI Studio.");
+        }
           
         if (isQuotaOrRateLimit) {
           console.warn(`[Model Fallback] Rate limit reached for ${currentModel}. Switching to next model...`);
           if (m === fallbackModels.length - 1) throw error; // No more models
           break; // Break inner retry loop to switch to the NEXT model immediately
         }
+
+        if (isBadRequest) {
+           throw error; // Don't cycle through models if it's a structural 400 error
+        }
+        
+        if (isNotFound) {
+          if (m === fallbackModels.length - 1) throw error;
+          break; // Switch to next model silently
+        }
         
         if (!isTransient) {
-          // If completely unexpected, switch to next model
+          console.warn(`[Model Fallback] Non-transient error on ${currentModel}. Error: ${error.message}`);
           if (m === fallbackModels.length - 1) throw error;
           break; 
         }
